@@ -132,14 +132,53 @@ class TestSqlResearchRepository:
         repo.update_progress(job.id, JobPhase.INVESTIGATING, 45, "Schritt 2/4")
 
         assert repo.request_cancellation(job.id) is True
+        cancelled_now = repo.get_job(job.id)
+        assert cancelled_now is not None
+        assert cancelled_now.status == JobStatus.CANCELLED
         assert repo.is_cancellation_requested(job.id) is True
-        repo.mark_job_cancelled(job.id)
+
+        # Nachzügler-Worker darf abgebrochenen Job nicht wieder überschreiben
+        repo.update_progress(job.id, JobPhase.SYNTHESIZING, 90, "Später Schritt")
+        repo.mark_job_failed(job.id, "Später Fehler")
+        still_cancelled = repo.get_job(job.id)
+        assert still_cancelled is not None
+        assert still_cancelled.status == JobStatus.CANCELLED
 
         assert repo.requeue_job_from_checkpoint(job.id) is True
         requeued = repo.get_job(job.id)
         assert requeued is not None
         assert requeued.status == JobStatus.QUEUED
         assert requeued.cancel_requested is False
+        repo.close()
+
+    def test_cleanup_stuck_cancellations_count_and_bulk_delete(self) -> None:
+        executor = SqliteExecutor(":memory:")
+        repo = SqlResearchRepository(executor)
+        repo.initialize_schema()
+
+        j_active = repo.create_job(ResearchRequest(topic="Aktiver Job"))
+        j_stuck = repo.create_job(ResearchRequest(topic="Hängender Abbruch"))
+        j_failed = repo.create_job(ResearchRequest(topic="Fehlgeschlagener Job"))
+
+        repo.claim_job(j_stuck.id, worker_id="w-stuck")
+        executor.execute(
+            "UPDATE research_jobs SET cancel_requested = 1 WHERE id = ?",
+            (j_stuck.id,),
+        )
+        repo.mark_job_failed(j_failed.id, "503 high demand")
+
+        cleaned = repo.cleanup_stuck_cancellations()
+        assert cleaned == 1
+        stuck_after = repo.get_job(j_stuck.id)
+        assert stuck_after is not None
+        assert stuck_after.status == JobStatus.CANCELLED
+
+        assert repo.count_jobs(statuses=(JobStatus.RUNNING, JobStatus.QUEUED)) == 1
+        purged = repo.delete_jobs_by_status((JobStatus.CANCELLED, JobStatus.FAILED))
+        assert purged == 2
+        assert repo.get_job(j_active.id) is not None
+        assert repo.get_job(j_stuck.id) is None
+        assert repo.get_job(j_failed.id) is None
         repo.close()
 
 

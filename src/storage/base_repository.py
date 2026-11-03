@@ -63,6 +63,10 @@ class ResearchRepository(ABC):
     ) -> list[ResearchJob]:
         """Listet Aufträge absteigend nach Erstellungszeitpunkt auf."""
 
+    def count_jobs(self, statuses: tuple[JobStatus, ...] | None = None) -> int:
+        """Zählt Aufträge exakt ohne Limit-Verzerrung (z. B. für Tab-Badges)."""
+        return len(self.list_jobs(statuses=statuses, limit=200))
+
     @abstractmethod
     def find_claimable_job_ids(
         self,
@@ -112,11 +116,15 @@ class ResearchRepository(ABC):
 
     @abstractmethod
     def request_cancellation(self, job_id: str) -> bool:
-        """Markiert einen Auftrag zum sicheren Abbruch bzw. bricht `queued` sofort ab."""
+        """Bricht einen wartenden oder laufenden Auftrag sofort ab (`cancelled`)."""
+
+    def cleanup_stuck_cancellations(self) -> int:
+        """Bereinigt veraltete Jobs im Zwischenzustand `running` + `cancel_requested = 1`."""
+        return 0
 
     @abstractmethod
     def requeue_job_from_checkpoint(self, job_id: str) -> bool:
-        """Setzt einen fehlgeschlagenen Auftrag unter Erhalt aller Checkpoints auf `queued` zurück."""
+        """Setzt einen fehlgeschlagenen oder abgebrochenen Auftrag unter Erhalt aller Checkpoints auf `queued` zurück."""
 
     @abstractmethod
     def is_cancellation_requested(self, job_id: str) -> bool:
@@ -136,7 +144,7 @@ class ResearchRepository(ABC):
 
     @abstractmethod
     def mark_job_cancelled(self, job_id: str) -> None:
-        """Bestätigt den vollständigen Abbruch eines laufenden Auftrags."""
+        """Bestätigt den vollständigen Abbruch eines Auftrags."""
 
     @abstractmethod
     def get_report(self, job_id: str) -> ResearchReport | None:
@@ -153,6 +161,17 @@ class ResearchRepository(ABC):
     @abstractmethod
     def delete_job_and_report(self, job_id: str) -> bool:
         """Löscht einen Auftrag samt zugehörigem Bericht endgültig."""
+
+    def delete_jobs_by_status(
+        self,
+        statuses: tuple[JobStatus, ...] = (JobStatus.CANCELLED, JobStatus.FAILED),
+    ) -> int:
+        """Entfernt alle Aufträge der angegebenen Endstatus (z. B. fehlgeschlagene/abgebrochene Läufe)."""
+        deleted = 0
+        for job in self.list_jobs(statuses=statuses, limit=200):
+            if self.delete_job_and_report(job.id):
+                deleted += 1
+        return deleted
 
     @abstractmethod
     def close(self) -> None:

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from src.config.constants import (
     DEFAULT_DEEP_MODEL,
     DEFAULT_FAST_MODEL,
+    DEFAULT_MAX_CONCURRENT_LOCAL_JOBS,
     DEFAULT_SQLITE_REL_PATH,
     DEFAULT_STALE_JOB_MINUTES,
 )
@@ -96,7 +97,7 @@ class AppSettings:
     github_repo: str = ""
     github_branch: str = "main"
     github_workflow_file: str = "run_research.yaml"
-    max_concurrent_local_jobs: int = 2
+    max_concurrent_local_jobs: int = DEFAULT_MAX_CONCURRENT_LOCAL_JOBS
     stale_job_timeout_minutes: int = DEFAULT_STALE_JOB_MINUTES
 
     email_provider: EmailProvider = EmailProvider.RESEND
@@ -180,7 +181,9 @@ def load_app_settings(yaml_path: Path | None = None) -> AppSettings:
         github_repo=get_secret_or_env("GITHUB_REPO"),
         github_branch=get_secret_or_env("GITHUB_BRANCH", "main"),
         github_workflow_file=get_secret_or_env("GITHUB_WORKFLOW_FILE", "run_research.yaml"),
-        max_concurrent_local_jobs=int(yaml_cfg.get("max_concurrent_local_jobs", 2)),
+        max_concurrent_local_jobs=int(
+            yaml_cfg.get("max_concurrent_local_jobs", DEFAULT_MAX_CONCURRENT_LOCAL_JOBS)
+        ),
         stale_job_timeout_minutes=int(
             yaml_cfg.get("stale_job_timeout_minutes", DEFAULT_STALE_JOB_MINUTES)
         ),

@@ -1,5 +1,5 @@
 default_language: "de"
 default_depth: "standard"
-max_concurrent_local_jobs: 2
-stale_job_timeout_minutes: 20
+max_concurrent_local_jobs: 4
+stale_job_timeout_minutes: 5
 enable_deep_research_agent: true

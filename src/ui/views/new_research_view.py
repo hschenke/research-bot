@@ -1,4 +1,4 @@
-"""Tab 1: Formular zum Starten neuer Web-Recherchen (inkl. >1h Hintergrund-Modus)."""
+"""Tab 1: Formular zum Starten neuer Web-Recherchen (inkl. Turbo-Schnellüberblick & >1h Cloud-Modus)."""
 
 from __future__ import annotations
 
@@ -20,12 +20,30 @@ def _get_available_gemini_models(api_key: str) -> list[str]:
     return fetch_available_gemini_models(api_key)
 
 
+def _format_profile_scope_caption(depth: ResearchDepth) -> str:
+    profile = DEPTH_PROFILES[depth]
+    if profile.max_urls_per_subtopic <= 0:
+        return (
+            f"Geplanter Umfang: **{profile.subtopic_count} parallele Teilgebiete** mit direktem "
+            "Live-Web-Grounding (Turbo-Modus ohne Scraper-Wartezeit)."
+        )
+    return (
+        f"Geplanter Umfang: **{profile.subtopic_count} Teilgebiete**, "
+        f"bis zu **{profile.max_urls_per_subtopic} Volltext-Seiten pro Teilgebiet**, "
+        f"**{profile.followup_rounds}** Nachschärfungsrunde(n)."
+    )
+
+
 def render_new_research_view(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
 ) -> None:
     """Rendert das Eingabeformular zum Anlegen und sofortigen Hintergrund-Start eines Auftrags."""
+    flash_msg = st.session_state.pop("_new_job_flash", None)
+    if flash_msg:
+        st.success(str(flash_msg))
+
     if role != AuthRole.ADMIN:
         st.info(
             "Du befindest dich im **Lese-Modus**. Melde dich links in der Seitenleiste als Admin an, "
@@ -41,7 +59,7 @@ def render_new_research_view(
 
     effective_worker = resolve_effective_worker_mode(settings)
     worker_badge = (
-        "☁️ GitHub Actions Cloud-Worker aktiv (läuft bis zu 5 Std. im Hintergrund – Browser kann geschlossen werden)"
+        "☁️ GitHub Actions Cloud-Worker aktiv (Schnellüberblick startet sofort im Turbo-Modus; lange Läufe bis 5 Std. in der Cloud)"
         if effective_worker.value == "github"
         else "💻 Lokaler Hintergrund-Worker aktiv (läuft asynchron im Server-Prozess)"
     )
@@ -67,15 +85,13 @@ def render_new_research_view(
         with col_model:
             model_options = _get_available_gemini_models(settings.gemini_api_key)
             default_m_idx = (
-                model_options.index(DEFAULT_MODEL)
-                if DEFAULT_MODEL in model_options
-                else 0
+                model_options.index(DEFAULT_MODEL) if DEFAULT_MODEL in model_options else 0
             )
             selected_model = st.selectbox(
                 "🧠 KI-Modell",
                 options=model_options,
                 index=default_m_idx,
-                help="Wähle das Gemini-Modell für Recherche & Synthese (dynamisch vom API-Key abgefragt). Standard: gemini-3.5-flash-lite.",
+                help="Wähle das Gemini-Modell für Recherche & Synthese. Standard: gemini-3.5-flash-lite.",
             )
         with col_depth:
             selected_depth = st.selectbox(
@@ -103,12 +119,7 @@ def render_new_research_view(
                 help="Sobald das Ergebnis vorliegt, wird der aufbereitete Bericht automatisch an diese Adresse gesendet.",
             )
 
-        selected_profile = DEPTH_PROFILES[selected_depth]
-        st.caption(
-            f"Geplanter Umfang: **{selected_profile.subtopic_count} Teilgebiete**, "
-            f"bis zu **{selected_profile.max_urls_per_subtopic} Volltext-Seiten pro Teilgebiet**, "
-            f"**{selected_profile.followup_rounds}** Nachschärfungsrunde(n)."
-        )
+        st.caption(_format_profile_scope_caption(selected_depth))
 
         submitted = st.form_submit_button(
             "🚀 Recherche im Hintergrund starten",
@@ -153,13 +164,13 @@ def _handle_job_submission(
         )
         job = repository.create_job(validated)
         dispatcher = JobDispatcher(settings)
-        worker_label = dispatcher.dispatch(job.id)
+        worker_label = dispatcher.dispatch(job.id, depth=validated.depth)
         effective_model = getattr(job, "model", None) or model or DEFAULT_MODEL
-        st.success(
+        st.session_state["_new_job_flash"] = (
             f"✅ Auftrag **`{job.id}`** wurde mit Modell **`{effective_model}`** gestartet ({worker_label})! "
-            "Du kannst dieses Fenster jederzeit schließen – bei Fertigstellung wirst du per E-Mail informiert. "
             "Den Live-Fortschritt findest du im Tab **⏳ Laufende Jobs**."
         )
+        st.rerun()
     except InputValidationError as exc:
         st.error(f"Eingabefehler: {exc}")
     except DispatchError as exc:

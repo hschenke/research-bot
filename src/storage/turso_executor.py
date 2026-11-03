@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -77,6 +78,7 @@ class TursoExecutor:
 
         self._pipeline_url = normalize_turso_pipeline_url(database_url)
         self._timeout = timeout_seconds
+        self._lock = threading.Lock()
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -128,11 +130,12 @@ class TursoExecutor:
     def _post_with_retry(self, payload: dict[str, Any]) -> dict[str, Any]:
         for attempt in range(DEFAULT_HTTP_RETRIES + 1):
             try:
-                response = self._session.post(
-                    self._pipeline_url,
-                    json=payload,
-                    timeout=self._timeout,
-                )
+                with self._lock:
+                    response = self._session.post(
+                        self._pipeline_url,
+                        json=payload,
+                        timeout=self._timeout,
+                    )
                 is_transient = response.status_code == 429 or response.status_code >= 500
                 if is_transient and attempt < DEFAULT_HTTP_RETRIES:
                     time.sleep(RETRY_BACKOFF_BASE_SECONDS * (attempt + 1))
@@ -185,4 +188,5 @@ class TursoExecutor:
         return parsed_results
 
     def close(self) -> None:
-        self._session.close()
+        with self._lock:
+            self._session.close()

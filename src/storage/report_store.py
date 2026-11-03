@@ -41,24 +41,51 @@ class CheckpointAndReportStore:
 
     def save_plan_checkpoint(self, job_id: str, plan: ResearchPlan) -> None:
         self._executor.execute(
-            "UPDATE research_jobs SET plan_json = ?, heartbeat_at = ? WHERE id = ?",
+            """
+            UPDATE research_jobs
+            SET plan_json = ?, heartbeat_at = ?
+            WHERE id = ? AND cancel_requested = 0 AND status != 'cancelled'
+            """,
             (plan.model_dump_json(), utc_now_iso(), job_id.strip()),
         )
 
     def save_baseline_checkpoint(self, job_id: str, baseline_markdown: str) -> None:
         self._executor.execute(
-            "UPDATE research_jobs SET baseline_markdown = ?, heartbeat_at = ? WHERE id = ?",
+            """
+            UPDATE research_jobs
+            SET baseline_markdown = ?, heartbeat_at = ?
+            WHERE id = ? AND cancel_requested = 0 AND status != 'cancelled'
+            """,
             (baseline_markdown, utc_now_iso(), job_id.strip()),
         )
 
     def save_findings_checkpoint(self, job_id: str, findings: list[SubTopicFinding]) -> None:
         serialized = json.dumps([f.model_dump() for f in findings], ensure_ascii=False)
         self._executor.execute(
-            "UPDATE research_jobs SET findings_json = ?, heartbeat_at = ? WHERE id = ?",
+            """
+            UPDATE research_jobs
+            SET findings_json = ?, heartbeat_at = ?
+            WHERE id = ? AND cancel_requested = 0 AND status != 'cancelled'
+            """,
             (serialized, utc_now_iso(), job_id.strip()),
         )
 
+    def _is_job_still_active(self, clean_id: str) -> bool:
+        """Stellt sicher, dass ein gelöschter oder abgebrochener Job keinen Bericht mehr anlegt."""
+        res = self._executor.execute(
+            "SELECT status, cancel_requested FROM research_jobs WHERE id = ? LIMIT 1",
+            (clean_id,),
+        )
+        if not res.rows:
+            return False
+        row = res.rows[0]
+        return not bool(int(row.get("cancel_requested") or 0)) and row.get("status") != "cancelled"
+
     def persist_completed_report(self, job_id: str, report: ResearchReport) -> None:
+        clean_id = job_id.strip()
+        if not self._is_job_still_active(clean_id):
+            return
+
         now_iso = utc_now_iso()
         upsert_report_sql = """
             INSERT INTO research_reports (
@@ -83,7 +110,7 @@ class CheckpointAndReportStore:
                 status_message = 'Recherche erfolgreich abgeschlossen.',
                 completed_at = ?,
                 heartbeat_at = ?
-            WHERE id = ?
+            WHERE id = ? AND cancel_requested = 0 AND status != 'cancelled'
         """
         self._executor.execute_batch(
             [
@@ -104,7 +131,7 @@ class CheckpointAndReportStore:
                         report.created_at or now_iso,
                     ),
                 ),
-                (update_job_sql, (now_iso, now_iso, job_id.strip())),
+                (update_job_sql, (now_iso, now_iso, clean_id)),
             ]
         )
 

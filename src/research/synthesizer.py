@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
+from src.domain.enums import ResearchDepth
+from src.domain.exceptions import JobCancelledError, ResearchBotError
 from src.domain.models import (
     ResearchJob,
     ResearchPlan,
@@ -15,6 +18,8 @@ from src.domain.models import (
 )
 from src.research.gemini_client import ResearchLLMGateway
 from src.security.sanitization import sanitize_display_url, sanitize_markdown_links
+
+logger = logging.getLogger(__name__)
 
 
 class _ExecutiveSummarySchema(BaseModel):
@@ -68,6 +73,43 @@ def _build_sources_section(citations: list[SourceCitation], language: str) -> st
     return "\n".join(lines)
 
 
+def _build_fallback_overview(
+    job: ResearchJob,
+    plan: ResearchPlan,
+    findings: list[SubTopicFinding],
+) -> _ExecutiveSummarySchema:
+    """Erstellt bei API-Spitzen eine ausfallsichere Zusammenfassung aus den bereits erhobenen Teilbefunden."""
+    takeaways: list[str] = []
+    for finding in findings:
+        for fact in finding.key_facts:
+            if fact.strip() and fact.strip() not in takeaways:
+                takeaways.append(fact.strip())
+            if len(takeaways) >= 8:
+                break
+        if len(takeaways) >= 8:
+            break
+
+    if not takeaways:
+        takeaways = [f.title for f in findings[:6]]
+
+    summary = plan.objective_summary.strip() or (
+        f"Strukturierte Übersicht zu '{job.topic}' über {len(findings)} untersuchte Teilbereiche."
+        if job.language == "de"
+        else f"Structured overview of '{job.topic}' across {len(findings)} researched areas."
+    )
+    conclusion = (
+        "Die detaillierten Analysen und Einzelquellen sind in den vorangehenden Fachkapiteln aufgeführt."
+        if job.language == "de"
+        else "Detailed analyses and verified sources are documented in the preceding chapters."
+    )
+    return _ExecutiveSummarySchema(
+        report_title=plan.normalized_title.strip() or job.topic,
+        executive_summary=summary,
+        key_takeaways=takeaways,
+        synthesis_conclusion=conclusion,
+    )
+
+
 def _assemble_report_markdown(
     overview: _ExecutiveSummarySchema,
     findings: list[SubTopicFinding],
@@ -75,18 +117,15 @@ def _assemble_report_markdown(
     language: str,
 ) -> str:
     """Fügt Executive Summary, alle Detailkapitel, Fazit und Quellenverzeichnis sauber zusammen."""
-    summary_heading = "## Executive Summary"
     takeaways_heading = "## Zentrale Erkenntnisse" if language == "de" else "## Key Takeaways"
     conclusion_heading = (
-        "## Übergreifendes Fazit & Ausblick"
-        if language == "de"
-        else "## Synthesis & Outlook"
+        "## Übergreifendes Fazit & Ausblick" if language == "de" else "## Synthesis & Outlook"
     )
 
     sections: list[str] = [
         f"# {overview.report_title.strip()}",
         "",
-        summary_heading,
+        "## Executive Summary",
         "",
         overview.executive_summary.strip(),
         "",
@@ -99,12 +138,7 @@ def _assemble_report_markdown(
 
     for finding in sorted(findings, key=lambda item: item.subtopic_index):
         sections.extend(
-            [
-                "",
-                f"## {finding.subtopic_index}. {finding.title}",
-                "",
-                finding.analysis_markdown.strip(),
-            ]
+            ["", f"## {finding.subtopic_index}. {finding.title}", "", finding.analysis_markdown.strip()]
         )
 
     sections.extend(
@@ -117,9 +151,7 @@ def _assemble_report_markdown(
             _build_sources_section(citations, language),
         ]
     )
-
-    raw_markdown = "\n".join(sections).strip()
-    return sanitize_markdown_links(raw_markdown)
+    return sanitize_markdown_links("\n".join(sections).strip())
 
 
 def synthesize_final_report(
@@ -134,7 +166,6 @@ def synthesize_final_report(
     """Erstellt aus allen Checkpoints den vollständigen, bereinigten `ResearchReport`."""
     lang_name = "Deutsch" if job.language == "de" else "English"
     citations = collect_unique_citations(findings)
-
     digest_blocks = [
         f"### {f.subtopic_index}. {f.title}\nKernfakten: {'; '.join(f.key_facts)}\n{f.analysis_markdown[:2500]}"
         for f in findings
@@ -142,31 +173,30 @@ def synthesize_final_report(
     baseline_hint = f"\nÜbergreifende Voranalyse:\n{baseline_markdown[:3000]}\n" if baseline_markdown else ""
 
     prompt = (
-        f"Thema des Forschungsauftrags: {job.topic}\n"
-        f"Zielsetzung: {plan.objective_summary}\n"
-        f"{baseline_hint}\n"
-        f"Ergebnisse der {len(findings)} untersuchten Teilgebiete:\n\n"
+        f"Thema des Forschungsauftrags: {job.topic}\nZielsetzung: {plan.objective_summary}\n"
+        f"{baseline_hint}\nErgebnisse der {len(findings)} untersuchten Teilgebiete:\n\n"
         + "\n\n".join(digest_blocks)
         + "\n\nErstelle Titel, Executive Summary, prägnante Key Takeaways sowie ein fundiertes Gesamtfazit."
     )
 
-    overview = gateway.generate_structured(
-        prompt=prompt,
-        system_instruction=(
-            f"Du bist Chefredakteur für wissenschaftliche und strategische Dossiers. "
-            f"Schreibe klar, sachlich, ohne Werbefloskeln auf {lang_name}."
-        ),
-        schema_cls=_ExecutiveSummarySchema,
-        prefer_deep=True,
-    )
+    use_deep = job.depth in {ResearchDepth.DEEP, ResearchDepth.EXHAUSTIVE}
+    try:
+        overview = gateway.generate_structured(
+            prompt=prompt,
+            system_instruction=(
+                f"Du bist Chefredakteur für wissenschaftliche und strategische Dossiers. "
+                f"Schreibe klar, sachlich, ohne Werbefloskeln auf {lang_name}."
+            ),
+            schema_cls=_ExecutiveSummarySchema,
+            prefer_deep=use_deep,
+        )
+    except JobCancelledError:
+        raise
+    except ResearchBotError as exc:
+        logger.warning("Synthese-Aufruf fehlgeschlagen (%s) – erstelle Fallback-Zusammenfassung.", exc)
+        overview = _build_fallback_overview(job, plan, findings)
 
-    full_markdown = _assemble_report_markdown(
-        overview=overview,
-        findings=findings,
-        citations=citations,
-        language=job.language,
-    )
-
+    full_markdown = _assemble_report_markdown(overview, findings, citations, job.language)
     return ResearchReport(
         job_id=job.id,
         title=overview.report_title.strip() or plan.normalized_title,

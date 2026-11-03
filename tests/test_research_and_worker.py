@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 from src.config.settings import AppSettings
 from src.domain.enums import JobStatus, ResearchDepth, WorkerMode
-from src.domain.exceptions import SSRFBlockedError
+from src.domain.exceptions import LLMProviderError, SSRFBlockedError
 from src.domain.models import (
     ResearchJob,
     ResearchPlan,
@@ -35,7 +35,8 @@ from src.research.orchestrator import ResearchOrchestrator
 from src.research.web_fetcher import SafeWebFetcher, extract_clean_text_from_html
 from src.storage.executor import SqliteExecutor
 from src.storage.repository import SqlResearchRepository
-from src.worker.dispatcher import resolve_effective_worker_mode
+from src.worker.dispatcher import JobDispatcher, resolve_effective_worker_mode
+from src.worker.github_dispatcher import GitHubActionsDispatcher
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -354,3 +355,91 @@ class TestWebFetcherAndEmailSecurity:
 
             custom_gw = gw.with_preferred_model("gemini-3.6-flash")
             assert custom_gw._fast_chain[0] == "gemini-3.6-flash"
+
+    def test_gateway_retries_transient_503_on_primary_model_and_skips_url_context_without_urls(
+        self,
+    ) -> None:
+        settings = AppSettings(gemini_api_key="valid_test_key")
+        mock_client = MagicMock()
+        ok_interaction = MagicMock()
+        ok_interaction.output_text = "Fundierte Fakten zu Klimazonen.\n- Fakt A: Tropen sind ganzjährig warm."
+        ok_interaction.steps = []
+
+        # Erster Versuch liefert 503 High Demand, zweiter Versuch auf demselben Modell klappt!
+        mock_client.interactions.create.side_effect = [
+            RuntimeError("Error code: 503 - currently experiencing high demand"),
+            ok_interaction,
+        ]
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("src.research.gemini_client.compute_backoff_seconds", lambda _a: 0.01)
+            gw = GeminiInteractionsGateway(settings, shared_client=mock_client)
+            res = gw.generate_grounded(
+                prompt="Untersuche Klimazonen der Erde",
+                system_instruction="Antworte präzise.",
+                use_url_context=True,
+                prefer_deep=False,
+            )
+
+        assert res.model_used == "gemini-3.5-flash-lite"
+        assert mock_client.interactions.create.call_count == 2
+        sent_tools = mock_client.interactions.create.call_args.kwargs["tools"]
+        assert sent_tools == [{"type": "google_search"}]
+
+    def test_orchestrator_auto_resumes_from_checkpoint_on_transient_503(self) -> None:
+        repo = SqlResearchRepository(SqliteExecutor(":memory:"))
+        repo.initialize_schema()
+        settings = AppSettings(gemini_api_key="test_key")
+        job = repo.create_job(ResearchRequest(topic="Auto-Resume Badestellen", depth=ResearchDepth.QUICK))
+
+        flaky_state = {"failed_once": False}
+
+        def _flaky_hook() -> None:
+            # Lasse Planung durch, aber wirf beim ersten Grounded-Aufruf einmalig 503
+            if llm.grounded_calls == 2 and not flaky_state["failed_once"]:
+                flaky_state["failed_once"] = True
+                raise LLMProviderError("503 service_unavailable high demand")
+
+        llm = FakeLLMGateway(on_step_hook=_flaky_hook)
+        fetcher = _make_stub_fetcher()
+        orchestrator = ResearchOrchestrator(settings, repo, llm, fetcher)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("src.research.orchestrator.AUTO_RESUME_COOLDOWN_SECONDS", 0.01)
+            report = orchestrator.execute_job(job.id, worker_id="self-healing-worker")
+
+        assert flaky_state["failed_once"] is True
+        assert report is not None
+        final_job = repo.get_job(job.id)
+        assert final_job is not None
+        assert final_job.status == JobStatus.COMPLETED
+        fetcher.close()
+        repo.close()
+
+    def test_quick_depth_uses_local_turbo_worker_and_github_cancel_validates_run_id(self) -> None:
+        cloud_settings = AppSettings(
+            worker_mode=WorkerMode.AUTO,
+            github_token="ghp_valid",
+            github_repo="hschenke/research-bot",
+            turso_url="libsql://research-bot.turso.io",
+            turso_auth_token="ey_valid_token",
+        )
+        dispatcher = JobDispatcher(cloud_settings)
+        mock_runner = MagicMock()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("src.worker.dispatcher.get_shared_local_runner", lambda _s: mock_runner)
+            label = dispatcher.dispatch("job_quick_1", depth=ResearchDepth.QUICK)
+            assert "Turbo-Worker" in label
+            mock_runner.submit_job.assert_called_once_with("job_quick_1")
+
+        gh = GitHubActionsDispatcher(cloud_settings)
+        assert gh.cancel_workflow_for_worker("local-thread") is False
+        assert gh.cancel_workflow_for_worker("gh-run-not-a-number") is False
+
+        ok_resp = MagicMock(status_code=202)
+        with pytest.MonkeyPatch.context() as mp:
+            post_mock = MagicMock(return_value=ok_resp)
+            mp.setattr("requests.post", post_mock)
+            assert gh.cancel_workflow_for_worker("gh-run-12345678") is True
+            called_url = post_mock.call_args.args[0]
+            assert called_url.endswith("/actions/runs/12345678/cancel")

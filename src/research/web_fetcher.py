@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -13,6 +14,7 @@ from bs4 import BeautifulSoup
 from src.config.constants import (
     HTTP_CONNECT_TIMEOUT_SECONDS,
     HTTP_READ_TIMEOUT_SECONDS,
+    MAX_CANDIDATE_URL_PROBE_FACTOR,
     MAX_EXTRACTED_CHARS_PER_PAGE,
     MAX_HTTP_REDIRECTS,
     MAX_WEB_PAGE_BYTES,
@@ -146,18 +148,32 @@ class SafeWebFetcher:
             chunks.append(chunk)
         return b"".join(chunks)
 
-    def fetch_many_tolerant(self, urls: list[str], max_pages: int) -> list[FetchedWebPage]:
-        """Lädt bis zu `max_pages` Webseiten; Einzelfehler werden isoliert protokolliert."""
+    def fetch_many_tolerant(
+        self,
+        urls: list[str],
+        max_pages: int,
+        cancel_check: Callable[[], None] | None = None,
+    ) -> list[FetchedWebPage]:
+        """Lädt bis zu `max_pages` Webseiten; begrenzt Fehlversuche und prüft auf Abbruch."""
+        if max_pages <= 0 or not urls:
+            return []
+
         fetched: list[FetchedWebPage] = []
         seen_urls: set[str] = set()
+        attempts = 0
+        max_attempts = max(max_pages, max_pages * MAX_CANDIDATE_URL_PROBE_FACTOR)
 
         for raw_url in urls:
-            if len(fetched) >= max_pages:
+            if len(fetched) >= max_pages or attempts >= max_attempts:
                 break
+            if cancel_check is not None:
+                cancel_check()
+
             candidate = raw_url.strip()
             if not candidate or candidate in seen_urls:
                 continue
             seen_urls.add(candidate)
+            attempts += 1
 
             try:
                 page = self.fetch_page(candidate)

@@ -74,7 +74,8 @@ def render_settings_view(
         if claimable and st.button("🔄 Verwaiste Jobs jetzt anstoßen", type="secondary"):
             dispatcher = JobDispatcher(settings)
             for job_id in claimable:
-                dispatcher.dispatch(job_id)
+                job = repository.get_job(job_id)
+                dispatcher.dispatch(job_id, depth=job.depth if job else None)
             st.success(f"{len(claimable)} Job(s) wurden erneut an den Worker übergeben.")
 
     st.divider()

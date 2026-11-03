@@ -11,7 +11,6 @@ from src.config.constants import (
     DEFAULT_JOBS_LIST_LIMIT,
     DEFAULT_REPORTS_LIST_LIMIT,
     DEFAULT_STALE_JOB_MINUTES,
-    MAX_PROGRESS_LOG_ENTRIES,
 )
 from src.domain.enums import JobPhase, JobStatus
 from src.domain.models import (
@@ -24,6 +23,7 @@ from src.domain.models import (
 )
 from src.storage.base_repository import JobCheckpoint, ResearchRepository, utc_now_iso
 from src.storage.executor import SqlExecutor
+from src.storage.job_lifecycle_store import JobLifecycleStore
 from src.storage.report_store import CheckpointAndReportStore
 from src.storage.row_mapper import map_row_to_job
 from src.storage.schema import SCHEMA_STATEMENTS
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _stale_cutoff_iso(stale_timeout_minutes: int) -> str:
     """Berechnet den ISO-Grenzzeitpunkt für verwaiste Worker-Heartbeats."""
-    minutes = max(5, stale_timeout_minutes)
+    minutes = max(1, stale_timeout_minutes)
     return (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
 
 
@@ -43,6 +43,7 @@ class SqlResearchRepository(ResearchRepository):
     def __init__(self, executor: SqlExecutor) -> None:
         self._executor = executor
         self._report_store = CheckpointAndReportStore(executor)
+        self._lifecycle_store = JobLifecycleStore(executor)
 
     @property
     def backend_name(self) -> str:
@@ -56,8 +57,8 @@ class SqlResearchRepository(ResearchRepository):
                 (),
             )
         except Exception as exc:
-            # Spalte existiert bereits (SQLite: duplicate column name / Turso: duplicate column)
             logger.debug("Spalte 'model' existiert bereits in research_jobs: %s", exc)
+        self.cleanup_stuck_cancellations()
 
     def create_job(self, request: ResearchRequest) -> ResearchJob:
         job_id = uuid.uuid4().hex[:12]
@@ -124,6 +125,17 @@ class SqlResearchRepository(ResearchRepository):
         res = self._executor.execute(sql, params)
         return [map_row_to_job(row) for row in res.rows]
 
+    def count_jobs(self, statuses: tuple[JobStatus, ...] | None = None) -> int:
+        if statuses:
+            placeholders = ", ".join("?" for _ in statuses)
+            sql = f"SELECT COUNT(*) AS cnt FROM research_jobs WHERE status IN ({placeholders})"  # noqa: S608
+            params: tuple[str, ...] = tuple(s.value for s in statuses)
+        else:
+            sql = "SELECT COUNT(*) AS cnt FROM research_jobs"
+            params = ()
+        res = self._executor.execute(sql, params)
+        return int(res.rows[0].get("cnt") or 0) if res.rows else 0
+
     def find_claimable_job_ids(
         self,
         stale_timeout_minutes: int = DEFAULT_STALE_JOB_MINUTES,
@@ -178,35 +190,17 @@ class SqlResearchRepository(ResearchRepository):
         progress_percent: int,
         message: str,
     ) -> None:
-        now_iso = utc_now_iso()
-        existing = self.get_job(job_id)
-        entries = [entry.model_dump() for entry in (existing.progress_log if existing else [])]
-        entries.append(
-            ProgressLogEntry(timestamp_iso=now_iso, phase=phase, message=message).model_dump()
-        )
-        self._executor.execute(
-            """
-            UPDATE research_jobs
-            SET phase = ?,
-                progress_percent = ?,
-                status_message = ?,
-                progress_log_json = ?,
-                heartbeat_at = ?
-            WHERE id = ?
-            """,
-            (
-                phase.value,
-                max(0, min(100, progress_percent)),
-                message,
-                json.dumps(entries[-MAX_PROGRESS_LOG_ENTRIES:], ensure_ascii=False),
-                now_iso,
-                job_id.strip(),
-            ),
+        self._lifecycle_store.append_progress_update(
+            existing=self.get_job(job_id),
+            job_id=job_id,
+            phase=phase,
+            progress_percent=progress_percent,
+            message=message,
         )
 
     def touch_heartbeat(self, job_id: str) -> None:
         self._executor.execute(
-            "UPDATE research_jobs SET heartbeat_at = ? WHERE id = ?",
+            "UPDATE research_jobs SET heartbeat_at = ? WHERE id = ? AND cancel_requested = 0 AND status = 'running'",
             (utc_now_iso(), job_id.strip()),
         )
 
@@ -223,57 +217,16 @@ class SqlResearchRepository(ResearchRepository):
         self._report_store.save_findings_checkpoint(job_id, findings)
 
     def request_cancellation(self, job_id: str) -> bool:
-        clean_id = job_id.strip()
-        queued_res = self._executor.execute(
-            """
-            UPDATE research_jobs
-            SET status = 'cancelled',
-                phase = 'cancelled',
-                cancel_requested = 1,
-                status_message = 'Vor Start durch Nutzer abgebrochen.',
-                completed_at = ?
-            WHERE id = ? AND status = 'queued'
-            """,
-            (utc_now_iso(), clean_id),
-        )
-        if queued_res.affected_rows > 0:
-            return True
+        return self._lifecycle_store.cancel_immediately(self.get_job(job_id), job_id)
 
-        running_res = self._executor.execute(
-            """
-            UPDATE research_jobs
-            SET cancel_requested = 1,
-                status_message = 'Abbruch angefordert – stoppe nach aktuellem Schritt...'
-            WHERE id = ? AND status = 'running'
-            """,
-            (clean_id,),
-        )
-        return running_res.affected_rows > 0
+    def cleanup_stuck_cancellations(self) -> int:
+        return self._lifecycle_store.cleanup_stuck_cancellations()
 
     def requeue_job_from_checkpoint(self, job_id: str) -> bool:
-        res = self._executor.execute(
-            """
-            UPDATE research_jobs
-            SET status = 'queued',
-                error_message = '',
-                cancel_requested = 0,
-                completed_at = NULL,
-                status_message = 'Wiederanlauf vom letzten gespeicherten Checkpoint...'
-            WHERE id = ? AND status IN ('failed', 'cancelled')
-            """,
-            (job_id.strip(),),
-        )
-        return res.affected_rows > 0
+        return self._lifecycle_store.requeue_from_checkpoint(job_id)
 
     def is_cancellation_requested(self, job_id: str) -> bool:
-        res = self._executor.execute(
-            "SELECT cancel_requested, status FROM research_jobs WHERE id = ? LIMIT 1",
-            (job_id.strip(),),
-        )
-        if not res.rows:
-            return True
-        row = res.rows[0]
-        return bool(int(row.get("cancel_requested") or 0)) or row.get("status") == "cancelled"
+        return self._lifecycle_store.is_cancellation_requested(job_id)
 
     def mark_job_completed(self, job_id: str, report: ResearchReport) -> None:
         self._report_store.persist_completed_report(job_id, report)
@@ -285,35 +238,10 @@ class SqlResearchRepository(ResearchRepository):
         )
 
     def mark_job_failed(self, job_id: str, error_message: str) -> None:
-        now_iso = utc_now_iso()
-        self._executor.execute(
-            """
-            UPDATE research_jobs
-            SET status = 'failed',
-                phase = 'failed',
-                status_message = 'Auftrag mit Fehler abgebrochen.',
-                error_message = ?,
-                completed_at = ?,
-                heartbeat_at = ?
-            WHERE id = ?
-            """,
-            (error_message.strip()[:500], now_iso, now_iso, job_id.strip()),
-        )
+        self._lifecycle_store.mark_failed(job_id, error_message)
 
     def mark_job_cancelled(self, job_id: str) -> None:
-        now_iso = utc_now_iso()
-        self._executor.execute(
-            """
-            UPDATE research_jobs
-            SET status = 'cancelled',
-                phase = 'cancelled',
-                status_message = 'Auftrag durch Nutzer abgebrochen.',
-                completed_at = ?,
-                heartbeat_at = ?
-            WHERE id = ?
-            """,
-            (now_iso, now_iso, job_id.strip()),
-        )
+        self._lifecycle_store.mark_cancelled(job_id)
 
     def get_report(self, job_id: str) -> ResearchReport | None:
         return self._report_store.get_report(job_id)
@@ -327,6 +255,12 @@ class SqlResearchRepository(ResearchRepository):
 
     def delete_job_and_report(self, job_id: str) -> bool:
         return self._report_store.delete_job_and_report(job_id)
+
+    def delete_jobs_by_status(
+        self,
+        statuses: tuple[JobStatus, ...] = (JobStatus.CANCELLED, JobStatus.FAILED),
+    ) -> int:
+        return self._lifecycle_store.delete_by_statuses(statuses)
 
     def close(self) -> None:
         self._executor.close()

@@ -1,0 +1,63 @@
+name: Run Background Research Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Optionale ID des zu startenden Recherche-Auftrags (leer = alle wartenden Jobs)"
+        required: false
+        default: ""
+        type: string
+  schedule:
+    # Stündlicher Watchdog (Minute 17 vermeidet GitHub-Lastspitzen zur vollen/halben Stunde)
+    # Nimmt liegengebliebene oder unterbrochene Läufe automatisch am letzten Checkpoint wieder auf!
+    - cron: "17 * * * *"
+
+jobs:
+  research-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300 # Bis zu 5 Stunden ununterbrochene Laufzeit für tiefe Marathon-Recherchen (>1h)
+    permissions:
+      contents: read
+
+    steps:
+      - name: Quellcode auschecken
+        uses: actions/checkout@v7
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "requirements-worker.txt"
+
+      - name: Worker-Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-worker.txt
+
+      - name: Recherche-Auftrag ausführen
+        env:
+          PYTHONUNBUFFERED: "1"
+          TARGET_JOB_ID: ${{ inputs.job_id }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.8-flash' }}
+          GEMINI_DEEP_MODEL: ${{ secrets.GEMINI_DEEP_MODEL || 'gemini-4-argon' }}
+          TURSO_URL: ${{ secrets.TURSO_URL }}
+          TURSO_KEY: ${{ secrets.TURSO_KEY }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER || 'resend' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM || 'Research Bot <onboarding@resend.dev>' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT || '587' }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          STREAMLIT_APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
+        run: |
+          if [ -n "$TARGET_JOB_ID" ]; then
+            python -m src.worker.cli_worker --job-id "$TARGET_JOB_ID"
+          else
+            python -m src.worker.cli_worker --max-jobs 3
+          fi

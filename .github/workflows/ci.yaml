@@ -1,0 +1,35 @@
+name: Clean Code & Security CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Quellcode auschecken
+        uses: actions/checkout@v7
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "requirements.txt"
+
+      - name: Abhängigkeiten & Test-Tools installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest ruff
+
+      - name: Linting & Security-Check (Ruff + Bandit-Regeln)
+        run: ruff check .
+
+      - name: Automatisierte Unit- & Integrationstests (Pytest)
+        run: pytest -v

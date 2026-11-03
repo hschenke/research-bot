@@ -44,13 +44,14 @@ DEEP_RESEARCH_AGENT_FAST: str = "deep-research-preview-04-2026"
 DEEP_RESEARCH_AGENT_MAX: str = "deep-research-max-preview-04-2026"
 
 # --- Kurze KI-Timeouts, 3-Versuche-Budget & Zeitlimits ---
-LLM_QUICK_TIMEOUT_SECONDS: float = 12.0
-LLM_FAST_TIMEOUT_SECONDS: float = 18.0
-LLM_DEFAULT_TIMEOUT_SECONDS: float = 30.0
+MIN_LLM_TIMEOUT_SECONDS: float = 10.0  # Absolutes Minimum für jeden KI-Aufruf
+LLM_QUICK_TIMEOUT_SECONDS: float = 25.0  # Ausreichend Zeit für Struktur- & Kurzsynthesen
+LLM_FAST_TIMEOUT_SECONDS: float = 35.0
+LLM_DEFAULT_TIMEOUT_SECONDS: float = 60.0
 MAX_STEP_ERROR_ATTEMPTS: int = 3  # Nach 3 Fehlversuchen sofort Methode wechseln / Teilergebnis!
-LLM_PER_MODEL_RETRIES: int = 1
+LLM_PER_MODEL_RETRIES: int = 2  # Bis zu 3 Versuche (Initial + 2 Retries) auf dem Wunschmodell
 MODEL_SWITCH_PAUSE_SECONDS: float = 0.25
-QUICK_MAX_TOTAL_SECONDS: float = 50.0  # Hartes Zeitbudget, damit Schnellüberblick < 1 Min. bleibt
+QUICK_MAX_TOTAL_SECONDS: float = 120.0  # Großzügiges Zeitbudget für Schnellüberblick (~1-2 Min.)
 QUICK_RESUME_COOLDOWN_SECONDS: float = 0.5
 GROUNDING_QUOTA_COOLDOWN_SECONDS: float = 180.0
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import html
+from typing import Any
+
 import streamlit as st
 
 from src.config.constants import DEPTH_PROFILES
@@ -55,6 +58,18 @@ def render_reports_view(
         )
 
 
+def _render_kpi_card(column: Any, label: str, value: str) -> None:
+    """Rendert eine robuste KPI-Karte via Border-Container ohne anfällige dynamische Vite-Chunks."""
+    safe_val = html.escape(value)
+    safe_lbl = html.escape(label)
+    with column.container(border=True):
+        st.caption(safe_lbl)
+        st.markdown(
+            f"<div style='font-size: 1.25rem; font-weight: 600; line-height: 1.2;'>{safe_val}</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def _render_single_report(
     report: ResearchReport,
     settings: AppSettings,
@@ -63,10 +78,10 @@ def _render_single_report(
 ) -> None:
     st.divider()
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-    col_m1.metric("Tiefe", DEPTH_PROFILES[report.depth].label)
-    col_m2.metric("Laufzeit", format_duration_human(report.duration_seconds))
-    col_m3.metric("Verifizierte Quellen", str(len(report.citations)))
-    col_m4.metric("Erstellt (UTC)", report.created_at[:10])
+    _render_kpi_card(col_m1, "Tiefe", DEPTH_PROFILES[report.depth].label)
+    _render_kpi_card(col_m2, "Laufzeit", format_duration_human(report.duration_seconds))
+    _render_kpi_card(col_m3, "Verifizierte Quellen", str(len(report.citations)))
+    _render_kpi_card(col_m4, "Erstellt (UTC)", report.created_at[:10])
     if report.model_used:
         st.caption(f"🤖 Erstellt mit Modell: `{report.model_used}`")
 

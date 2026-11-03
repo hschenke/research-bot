@@ -20,6 +20,7 @@ from src.config.constants import (
     LLM_PER_MODEL_RETRIES,
     LLM_QUICK_TIMEOUT_SECONDS,
     MAX_STEP_ERROR_ATTEMPTS,
+    MIN_LLM_TIMEOUT_SECONDS,
     MODEL_SWITCH_PAUSE_SECONDS,
 )
 from src.config.settings import AppSettings
@@ -140,7 +141,7 @@ class GeminiInteractionsGateway:
         cancel_check: Callable[[], None] | None = None,
         on_action: Callable[[str], None] | None = None,
         fast_mode: bool | None = None,
-        deadline_monotonic: float | None = None,
+        deadline_monotonic: float | None = _UNSET,
         language: str | None = None,
     ) -> GeminiInteractionsGateway:
         """Erzeugt eine Gateway-Sicht mit gemeinsamem Client, Quota-Gedächtnis und Live-Action-Hook."""
@@ -151,7 +152,7 @@ class GeminiInteractionsGateway:
             shared_client=self._client,
             on_action=on_action if on_action is not None else self._on_action,
             fast_mode=self._fast_mode if fast_mode is None else fast_mode,
-            deadline_monotonic=deadline_monotonic or self._deadline_monotonic,
+            deadline_monotonic=self._deadline_monotonic if deadline_monotonic is _UNSET else deadline_monotonic,
             language=language or self._language,
             quota_state=self._quota_state,
             web_search_fn=self._web_search_fn,
@@ -180,9 +181,9 @@ class GeminiInteractionsGateway:
         )
         if self._deadline_monotonic is not None:
             remaining = self._deadline_monotonic - time.monotonic()
-            if remaining <= 2.5:
+            if remaining <= 0:
                 raise LLMProviderError("Zeitlimit für Schnellüberblick erreicht – schließe ab.")
-            return min(base, remaining)
+            return max(MIN_LLM_TIMEOUT_SECONDS, min(base, remaining))
         return base
 
     def generate_structured(
@@ -199,11 +200,11 @@ class GeminiInteractionsGateway:
         for model_name in models:
             for same_idx in range(LLM_PER_MODEL_RETRIES + 1):
                 self._check_cancelled()
-                timeout_sec = self._timeout_for(prefer_deep)
                 self._emit_action(
                     f"🤖 KI-Strukturanalyse via {model_name} (Versuch {errors + 1}/{MAX_STEP_ERROR_ATTEMPTS})..."
                 )
                 try:
+                    timeout_sec = self._timeout_for(prefer_deep)
                     interaction = self._client.interactions.create(
                         model=model_name,
                         input=prompt,
@@ -273,11 +274,11 @@ class GeminiInteractionsGateway:
         for model_name in models:
             for same_idx in range(LLM_PER_MODEL_RETRIES + 1):
                 self._check_cancelled()
-                timeout_sec = self._timeout_for(prefer_deep)
                 self._emit_action(
                     f"🌐 KI-Websuche via {model_name} (Versuch {errors + 1}/{MAX_STEP_ERROR_ATTEMPTS})..."
                 )
                 try:
+                    timeout_sec = self._timeout_for(prefer_deep)
                     interaction = self._client.interactions.create(
                         model=model_name,
                         input=prompt,

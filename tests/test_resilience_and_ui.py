@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel
+from src.config.constants import MIN_LLM_TIMEOUT_SECONDS
 from src.config.settings import AppSettings
 from src.domain.enums import JobPhase, JobStatus, ResearchDepth
 from src.domain.exceptions import LLMProviderError
@@ -230,3 +232,62 @@ def test_stop_and_resume_buttons_stay_on_active_jobs_tab(tmp_path: Path) -> None
         assert resumed_job.status == JobStatus.QUEUED
 
     repo.close()
+
+
+def test_structured_call_retries_transient_timeouts_on_primary_model() -> None:
+    settings = AppSettings(gemini_api_key="valid_test_key")
+    mock_client = MagicMock()
+    ok_interaction = MagicMock()
+    ok_interaction.output_text = '{"normalized_title": "T", "objective_summary": "O", "subtopics": []}'
+    ok_interaction.steps = []
+
+    timeout_err = RuntimeError("Request timed out. This is a client-side timeout.")
+    mock_client.interactions.create.side_effect = [
+        timeout_err,
+        timeout_err,
+        ok_interaction,
+    ]
+
+    class _DummySchema(BaseModel):
+        normalized_title: str
+        objective_summary: str
+        subtopics: list[str]
+
+    recorded_actions: list[str] = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.research.gemini_client.compute_backoff_seconds", lambda _a: 0.001)
+        gw = GeminiInteractionsGateway(
+            settings,
+            shared_client=mock_client,
+            on_action=recorded_actions.append,
+        )
+        res = gw.generate_structured(
+            prompt="Erstelle Struktur",
+            system_instruction="System",
+            schema_cls=_DummySchema,
+        )
+
+    assert res.normalized_title == "T"
+    assert mock_client.interactions.create.call_count == 3
+    # Alle 3 Versuche liefen auf dem Primärmodell gemini-3.5-flash-lite
+    for call in mock_client.interactions.create.call_args_list:
+        assert call.kwargs["model"] == "gemini-3.5-flash-lite"
+
+
+def test_timeout_for_guarantees_minimum_seconds_and_clearing_deadline() -> None:
+    settings = AppSettings(gemini_api_key="valid_test_key")
+    mock_client = MagicMock()
+    # Fast abgelaufene Deadline (nur noch 2 Sekunden übrig)
+    tight_deadline = time.monotonic() + 2.0
+    gw = GeminiInteractionsGateway(
+        settings,
+        shared_client=mock_client,
+        deadline_monotonic=tight_deadline,
+    )
+    # Muss mindestens MIN_LLM_TIMEOUT_SECONDS garantieren und nicht auf 2s erdrosseln
+    t = gw._timeout_for(prefer_deep=False)
+    assert t >= MIN_LLM_TIMEOUT_SECONDS
+
+    # Synthese-Reset: Explizites deadline_monotonic=None muss Deadline aufheben
+    synth_gw = gw.with_preferred_model("gemini-3.5-flash-lite", deadline_monotonic=None)
+    assert synth_gw._deadline_monotonic is None

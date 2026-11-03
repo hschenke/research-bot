@@ -253,8 +253,9 @@ class ResearchOrchestrator:
             if (profile.use_deep_research_agent and self._settings.enable_deep_research_agent)
             else job_model
         )
+        synth_llm = self._bind_gateway(job, deadline_monotonic=None)
         report = synthesize_final_report(
-            gateway=llm,
+            gateway=synth_llm,
             job=refreshed_job,
             plan=plan,
             findings=findings,

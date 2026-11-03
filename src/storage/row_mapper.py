@@ -46,6 +46,7 @@ def map_row_to_job(row: dict[str, Any]) -> ResearchJob:
         depth=ResearchDepth(str(row.get("depth") or "standard")),
         language=str(row.get("language") or "de"),
         notify_email=str(row.get("notify_email") or ""),
+        model=str(row.get("model") or "gemini-3.5-flash-lite"),
         status=JobStatus(str(row.get("status") or "queued")),
         phase=JobPhase(str(row.get("phase") or "queued")),
         progress_percent=int(row.get("progress_percent") or 0),

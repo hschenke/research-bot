@@ -85,7 +85,7 @@ def _render_job_card(
         with top_left:
             st.markdown(f"**{job.topic}**")
             st.caption(
-                f"{badge} · ID `{job.id}` · {profile.label} · Angelegt: `{job.created_at[:19]} UTC`"
+                f"{badge} · ID `{job.id}` · 🤖 `{job.model}` · {profile.label} · Angelegt: `{job.created_at[:19]} UTC`"
             )
         with top_right:
             can_cancel = is_active and role == AuthRole.ADMIN and not job.cancel_requested

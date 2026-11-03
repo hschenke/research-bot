@@ -52,12 +52,16 @@ def validate_email_address(raw_email: str) -> str:
     return email
 
 
+_MODEL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9\.\-_]+$")
+
+
 def validate_research_request(
     topic: str,
     focus_instructions: str = "",
     depth: ResearchDepth = ResearchDepth.STANDARD,
     language: str = "de",
     notify_email: str = "",
+    model: str = "gemini-3.5-flash-lite",
 ) -> ResearchRequest:
     """Validiert und bereinigt alle Eingabefelder für einen neuen Recherche-Auftrag."""
     clean_topic = strip_control_characters(topic).strip()
@@ -82,12 +86,17 @@ def validate_research_request(
 
     clean_email = validate_email_address(notify_email)
 
+    clean_model = strip_control_characters(model).strip() or "gemini-3.5-flash-lite"
+    if len(clean_model) > 100 or not _MODEL_NAME_PATTERN.match(clean_model):
+        raise InputValidationError("Ungültiger Modellbezeichner.")
+
     return ResearchRequest(
         topic=clean_topic,
         focus_instructions=clean_focus,
         depth=depth,
         language=clean_lang,
         notify_email=clean_email,
+        model=clean_model,
     )
 
 

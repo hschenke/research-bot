@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import streamlit as st
 
-from src.config.constants import DEPTH_PROFILES
+from src.config.constants import DEFAULT_MODEL, DEPTH_PROFILES
 from src.config.settings import AppSettings
 from src.domain.enums import AuthRole, ResearchDepth
 from src.domain.exceptions import DispatchError, InputValidationError, ResearchBotError
+from src.research.gemini_client import fetch_available_gemini_models
 from src.security.sanitization import validate_research_request
 from src.storage.base_repository import ResearchRepository
 from src.worker.dispatcher import JobDispatcher, resolve_effective_worker_mode
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_available_gemini_models(api_key: str) -> list[str]:
+    """Fragt die verfügbaren Modelle ab und cacht das Ergebnis für 1 Stunde."""
+    return fetch_available_gemini_models(api_key)
 
 
 def render_new_research_view(
@@ -56,7 +63,20 @@ def render_new_research_view(
             max_chars=2000,
         )
 
-        col_depth, col_lang, col_mail = st.columns([2, 1, 2])
+        col_model, col_depth = st.columns([1, 1])
+        with col_model:
+            model_options = _get_available_gemini_models(settings.gemini_api_key)
+            default_m_idx = (
+                model_options.index(DEFAULT_MODEL)
+                if DEFAULT_MODEL in model_options
+                else 0
+            )
+            selected_model = st.selectbox(
+                "🧠 KI-Modell",
+                options=model_options,
+                index=default_m_idx,
+                help="Wähle das Gemini-Modell für Recherche & Synthese (dynamisch vom API-Key abgefragt). Standard: gemini-3.5-flash-lite.",
+            )
         with col_depth:
             selected_depth = st.selectbox(
                 "Recherche-Tiefe & Laufzeitprofil",
@@ -66,6 +86,8 @@ def render_new_research_view(
                     f"{DEPTH_PROFILES[d].label} ({DEPTH_PROFILES[d].estimated_duration_label})"
                 ),
             )
+
+        col_lang, col_mail = st.columns([1, 2])
         with col_lang:
             selected_lang = st.selectbox(
                 "Berichtssprache",
@@ -106,6 +128,7 @@ def render_new_research_view(
         depth=selected_depth,
         language=selected_lang,
         notify_email=notify_email,
+        model=selected_model,
     )
 
 
@@ -117,6 +140,7 @@ def _handle_job_submission(
     depth: ResearchDepth,
     language: str,
     notify_email: str,
+    model: str = DEFAULT_MODEL,
 ) -> None:
     try:
         validated = validate_research_request(
@@ -125,12 +149,13 @@ def _handle_job_submission(
             depth=depth,
             language=language,
             notify_email=notify_email,
+            model=model,
         )
         job = repository.create_job(validated)
         dispatcher = JobDispatcher(settings)
         worker_label = dispatcher.dispatch(job.id)
         st.success(
-            f"✅ Auftrag **`{job.id}`** wurde gestartet ({worker_label})! "
+            f"✅ Auftrag **`{job.id}`** wurde mit Modell **`{job.model}`** gestartet ({worker_label})! "
             "Du kannst dieses Fenster jederzeit schließen – bei Fertigstellung wirst du per E-Mail informiert. "
             "Den Live-Fortschritt findest du im Tab **⏳ Laufende Jobs**."
         )

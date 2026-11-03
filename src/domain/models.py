@@ -34,6 +34,7 @@ class ResearchRequest(BaseModel):
     depth: ResearchDepth = Field(default=ResearchDepth.STANDARD)
     language: str = Field(default="de", pattern=r"^(de|en)$")
     notify_email: str = Field(default="", max_length=254)
+    model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
 
 
 class SourceCitation(BaseModel):
@@ -101,6 +102,7 @@ class ResearchJob(BaseModel):
     depth: ResearchDepth = ResearchDepth.STANDARD
     language: str = "de"
     notify_email: str = ""
+    model: str = "gemini-3.5-flash-lite"
     status: JobStatus = JobStatus.QUEUED
     phase: JobPhase = JobPhase.QUEUED
     progress_percent: int = Field(default=0, ge=0, le=100)

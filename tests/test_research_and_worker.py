@@ -26,7 +26,11 @@ from src.notifications.email_renderer import (
     render_report_email_html,
 )
 from src.notifications.notifier import mask_email_for_log
-from src.research.gemini_client import GroundedGeneration
+from src.research.gemini_client import (
+    GeminiInteractionsGateway,
+    GroundedGeneration,
+    fetch_available_gemini_models,
+)
 from src.research.orchestrator import ResearchOrchestrator
 from src.research.web_fetcher import SafeWebFetcher, extract_clean_text_from_html
 from src.storage.executor import SqliteExecutor
@@ -311,3 +315,42 @@ class TestWebFetcherAndEmailSecurity:
             turso_auth_token="ey_valid_token",
         )
         assert resolve_effective_worker_mode(cloud_ready) == WorkerMode.GITHUB
+
+    def test_fetch_available_gemini_models_defaults_and_filtering(self) -> None:
+        # Leerer oder Placeholder-Key liefert Fallback-Liste
+        fallback = fetch_available_gemini_models("")
+        assert "gemini-3.5-flash-lite" in fallback
+        assert fallback[0] == "gemini-3.5-flash-lite"
+
+        # Mock für genai.Client.models.list
+        mock_models = [
+            MagicMock(name="m1", display_name="M1", supported_actions=["generateContent"]),
+            MagicMock(name="m2", display_name="M2", supported_actions=["generateContent"]),
+            MagicMock(name="m3", display_name="M3", supported_actions=["generateContent"]),
+            MagicMock(name="m4", display_name="M4", supported_actions=["generateContent"]),
+        ]
+        mock_models[0].name = "models/gemini-3.8-flash"
+        mock_models[1].name = "models/gemini-3.5-flash-lite"
+        mock_models[2].name = "models/gemini-3.5-flash-image"  # Ausgeschlossen (Bild)
+        mock_models[3].name = "models/gemini-3.6-flash"
+
+        mock_client = MagicMock()
+        mock_client.models.list.return_value = mock_models
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("google.genai.Client", lambda api_key: mock_client)
+            res = fetch_available_gemini_models("valid_test_key_123")
+            assert res[0] == "gemini-3.5-flash-lite"
+            assert "gemini-3.8-flash" in res
+            assert "gemini-3.6-flash" in res
+            assert "gemini-3.5-flash-image" not in res
+
+    def test_gateway_with_preferred_model_reorders_chain(self) -> None:
+        settings = AppSettings(gemini_api_key="valid_test_key")
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("google.genai.Client", lambda api_key: MagicMock())
+            gw = GeminiInteractionsGateway(settings)
+            assert gw._fast_chain[0] == "gemini-3.5-flash-lite"
+
+            custom_gw = gw.with_preferred_model("gemini-3.6-flash")
+            assert custom_gw._fast_chain[0] == "gemini-3.6-flash"

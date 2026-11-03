@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -27,6 +28,8 @@ from src.storage.report_store import CheckpointAndReportStore
 from src.storage.row_mapper import map_row_to_job
 from src.storage.schema import SCHEMA_STATEMENTS
 
+logger = logging.getLogger(__name__)
+
 
 def _stale_cutoff_iso(stale_timeout_minutes: int) -> str:
     """Berechnet den ISO-Grenzzeitpunkt für verwaiste Worker-Heartbeats."""
@@ -47,6 +50,14 @@ class SqlResearchRepository(ResearchRepository):
 
     def initialize_schema(self) -> None:
         self._executor.execute_batch([(stmt, ()) for stmt in SCHEMA_STATEMENTS])
+        try:
+            self._executor.execute(
+                "ALTER TABLE research_jobs ADD COLUMN model TEXT NOT NULL DEFAULT 'gemini-3.5-flash-lite'",
+                (),
+            )
+        except Exception as exc:
+            # Spalte existiert bereits (SQLite: duplicate column name / Turso: duplicate column)
+            logger.debug("Spalte 'model' existiert bereits in research_jobs: %s", exc)
 
     def create_job(self, request: ResearchRequest) -> ResearchJob:
         job_id = uuid.uuid4().hex[:12]
@@ -62,8 +73,8 @@ class SqlResearchRepository(ResearchRepository):
             """
             INSERT INTO research_jobs (
                 id, topic, focus_instructions, depth, language, notify_email,
-                status, phase, progress_percent, status_message, progress_log_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                model, status, phase, progress_percent, status_message, progress_log_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -72,6 +83,7 @@ class SqlResearchRepository(ResearchRepository):
                 request.depth.value,
                 request.language,
                 request.notify_email,
+                request.model,
                 JobStatus.QUEUED.value,
                 JobPhase.QUEUED.value,
                 0,

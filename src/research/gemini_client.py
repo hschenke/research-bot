@@ -16,6 +16,8 @@ from src.config.constants import (
     CANDIDATE_FAST_MODELS,
     DEEP_AGENT_MAX_WAIT_SECONDS,
     DEEP_AGENT_POLL_INTERVAL_SECONDS,
+    DEFAULT_MODEL,
+    FALLBACK_AVAILABLE_MODELS,
 )
 from src.config.settings import AppSettings
 from src.domain.exceptions import LLMProviderError
@@ -69,6 +71,60 @@ class ResearchLLMGateway(Protocol):
         ...
 
 
+_EXCLUDED_MODEL_KEYWORDS: tuple[str, ...] = (
+    "tts",
+    "image",
+    "banana",
+    "lyria",
+    "robotics",
+    "computer-use",
+    "embedding",
+    "transcribe",
+    "live",
+    "gemma",
+    "customtools",
+    "aqa",
+    "audio",
+    "native",
+)
+
+
+def fetch_available_gemini_models(api_key: str) -> list[str]:
+    """
+    Fragt die über den Gemini-API-Key verfügbaren Modelle dynamisch über das Google GenAI SDK ab.
+    Filtert auf generative Textmodelle und platziert `DEFAULT_MODEL` ('gemini-3.5-flash-lite')
+    als Standard an die erste Stelle. Fällt bei Netzwerk-/Auth-Problemen sicher auf Fallback-Modelle zurück.
+    """
+    clean_key = (api_key or "").strip()
+    if not clean_key or clean_key.startswith("your_"):
+        return list(FALLBACK_AVAILABLE_MODELS)
+
+    try:
+        client = genai.Client(api_key=clean_key)
+        all_models = [m.name.replace("models/", "") for m in client.models.list()]
+        filtered = [
+            m
+            for m in all_models
+            if m.startswith("gemini-")
+            and not any(keyword in m.lower() for keyword in _EXCLUDED_MODEL_KEYWORDS)
+            and m != "gemini-2.5-flash"  # Veraltetes Modell (Google 404)
+        ]
+
+        if DEFAULT_MODEL in filtered:
+            filtered.remove(DEFAULT_MODEL)
+            filtered.insert(0, DEFAULT_MODEL)
+        elif DEFAULT_MODEL not in filtered:
+            filtered.insert(0, DEFAULT_MODEL)
+
+        return filtered if filtered else list(FALLBACK_AVAILABLE_MODELS)
+    except Exception as exc:
+        logger.warning(
+            "Konnte Gemini-Modellliste nicht dynamisch von API abrufen (%s) – nutze Standardliste.",
+            exc,
+        )
+        return list(FALLBACK_AVAILABLE_MODELS)
+
+
 def _build_model_chain(preferred: str, defaults: tuple[str, ...]) -> list[str]:
     """Baut eine deduplizierte Modell-Fallback-Kette auf."""
     chain: list[str] = []
@@ -107,14 +163,29 @@ def extract_citations_from_interaction(interaction: Any) -> list[SourceCitation]
 class GeminiInteractionsGateway:
     """Konkrete Implementierung über die Google GenAI Interactions API."""
 
-    def __init__(self, settings: AppSettings) -> None:
+    def __init__(
+        self,
+        settings: AppSettings,
+        preferred_model: str | None = None,
+    ) -> None:
         if not settings.has_gemini_configured:
             raise LLMProviderError(
                 "Kein gültiger GEMINI_API_KEY konfiguriert. Bitte in .env oder Secrets hinterlegen."
             )
+        self._settings = settings
+        self._preferred_model = preferred_model or ""
         self._client = genai.Client(api_key=settings.gemini_api_key)
-        self._fast_chain = _build_model_chain(settings.gemini_fast_model, CANDIDATE_FAST_MODELS)
-        self._deep_chain = _build_model_chain(settings.gemini_deep_model, CANDIDATE_DEEP_MODELS)
+        fast_target = preferred_model or settings.gemini_fast_model or DEFAULT_MODEL
+        deep_target = preferred_model or settings.gemini_deep_model or DEFAULT_MODEL
+        self._fast_chain = _build_model_chain(fast_target, CANDIDATE_FAST_MODELS)
+        self._deep_chain = _build_model_chain(deep_target, CANDIDATE_DEEP_MODELS)
+        self._search_grounding_quota_exhausted = False
+
+    def with_preferred_model(self, model: str) -> GeminiInteractionsGateway:
+        """Erzeugt eine Gateway-Kopie mit einem spezifischen Modell als Priorität 1."""
+        gw = GeminiInteractionsGateway(self._settings, preferred_model=model)
+        gw._search_grounding_quota_exhausted = self._search_grounding_quota_exhausted
+        return gw
 
     def _select_models(self, prefer_deep: bool) -> list[str]:
         return self._deep_chain if prefer_deep else self._fast_chain
@@ -160,34 +231,62 @@ class GeminiInteractionsGateway:
         use_url_context: bool = True,
         prefer_deep: bool = False,
     ) -> GroundedGeneration:
-        tools: list[dict[str, str]] = [{"type": "google_search"}]
-        if use_url_context:
-            tools.append({"type": "url_context"})
-
         last_exc: Exception | None = None
+
+        if not self._search_grounding_quota_exhausted:
+            tools: list[dict[str, str]] = [{"type": "google_search"}]
+            if use_url_context:
+                tools.append({"type": "url_context"})
+
+            for model_name in self._select_models(prefer_deep):
+                try:
+                    interaction = self._client.interactions.create(
+                        model=model_name,
+                        input=prompt,
+                        system_instruction=system_instruction,
+                        tools=tools,
+                    )
+                    output = (interaction.output_text or "").strip()
+                    if not output:
+                        raise ValueError("Leere Grounding-Antwort vom Modell erhalten.")
+                    citations = extract_citations_from_interaction(interaction)
+                    return GroundedGeneration(
+                        text=output,
+                        citations=citations,
+                        model_used=model_name,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Grounded-Aufruf mit '%s' fehlgeschlagen (%s). Prüfe Fallback...",
+                        model_name,
+                        exc,
+                    )
+                    last_exc = exc
+                    err_text = str(exc).lower()
+                    if any(k in err_text for k in ("429", "quota", "exhausted", "ratelimit")):
+                        logger.warning(
+                            "Such-Tool-Quota erschöpft – deaktiviere Tool für nachfolgende Schritte."
+                        )
+                        self._search_grounding_quota_exhausted = True
+                        break
+
+        # Fallback auf direkte Modellgenerierung (ohne Google Search Tool)
+        logger.info("Führe Recherche-Analyse ohne Such-Tools aus (Fallback)...")
         for model_name in self._select_models(prefer_deep):
             try:
                 interaction = self._client.interactions.create(
                     model=model_name,
                     input=prompt,
                     system_instruction=system_instruction,
-                    tools=tools,
                 )
                 output = (interaction.output_text or "").strip()
-                if not output:
-                    raise ValueError("Leere Grounding-Antwort vom Modell erhalten.")
-                citations = extract_citations_from_interaction(interaction)
-                return GroundedGeneration(
-                    text=output,
-                    citations=citations,
-                    model_used=model_name,
-                )
+                if output:
+                    return GroundedGeneration(
+                        text=output,
+                        citations=[],
+                        model_used=model_name,
+                    )
             except Exception as exc:
-                logger.warning(
-                    "Grounded-Aufruf mit '%s' fehlgeschlagen (%s). Prüfe Fallback...",
-                    model_name,
-                    exc,
-                )
                 last_exc = exc
 
         raise LLMProviderError(f"Alle Gemini-Modelle für Web-Grounding fehlgeschlagen: {last_exc}")

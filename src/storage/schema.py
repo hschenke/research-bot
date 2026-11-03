@@ -9,6 +9,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         depth TEXT NOT NULL DEFAULT 'standard',
         language TEXT NOT NULL DEFAULT 'de',
         notify_email TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT 'gemini-3.5-flash-lite',
         status TEXT NOT NULL DEFAULT 'queued',
         phase TEXT NOT NULL DEFAULT 'queued',
         progress_percent INTEGER NOT NULL DEFAULT 0,

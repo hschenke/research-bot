@@ -125,9 +125,17 @@ class TestSanitizationAndValidation:
             depth=ResearchDepth.DEEP,
             language="de",
             notify_email="test@firma.de",
+            model="gemini-3.6-flash",
         )
         assert req.topic == "Quantencomputing Fortschritte 2026"
         assert req.depth == ResearchDepth.DEEP
+        assert req.model == "gemini-3.6-flash"
+
+        with pytest.raises(InputValidationError):
+            validate_research_request(
+                topic="Gültiges Thema für Test",
+                model="bad model with spaces; rm -rf",
+            )
 
 
 class TestAuthenticationAndSecretHygiene:

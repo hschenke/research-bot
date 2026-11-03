@@ -67,6 +67,8 @@ def _render_single_report(
     col_m2.metric("Laufzeit", format_duration_human(report.duration_seconds))
     col_m3.metric("Verifizierte Quellen", str(len(report.citations)))
     col_m4.metric("Erstellt (UTC)", report.created_at[:10])
+    if report.model_used:
+        st.caption(f"🤖 Erstellt mit Modell: `{report.model_used}`")
 
     app_url = build_report_app_url(
         base_url=settings.streamlit_app_url,

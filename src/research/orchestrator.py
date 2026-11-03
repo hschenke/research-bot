@@ -115,14 +115,21 @@ class ResearchOrchestrator:
         checkpoint = self._repo.load_checkpoint(job.id)
         self._check_alive(job.id)
 
-        plan = checkpoint.plan or self._run_planning_step(job, profile)
-        baseline_md = checkpoint.baseline_markdown or self._run_baseline_step(job, profile)
+        llm = (
+            self._llm.with_preferred_model(job.model)
+            if hasattr(self._llm, "with_preferred_model")
+            else self._llm
+        )
+
+        plan = checkpoint.plan or self._run_planning_step(job, profile, llm)
+        baseline_md = checkpoint.baseline_markdown or self._run_baseline_step(job, profile, llm)
         findings = self._run_investigation_steps(
             job=job,
             plan=plan,
             profile=profile,
             existing_findings=checkpoint.findings,
             baseline_markdown=baseline_md,
+            gateway=llm,
         )
 
         self._check_alive(job.id)
@@ -138,11 +145,11 @@ class ResearchOrchestrator:
         model_label = (
             profile.deep_agent_name
             if (profile.use_deep_research_agent and self._settings.enable_deep_research_agent)
-            else self._settings.gemini_deep_model
+            else (job.model or self._settings.gemini_fast_model)
         )
 
         report = synthesize_final_report(
-            gateway=self._llm,
+            gateway=llm,
             job=refreshed_job,
             plan=plan,
             findings=findings,
@@ -153,18 +160,28 @@ class ResearchOrchestrator:
         self._repo.mark_job_completed(job.id, report)
         return report
 
-    def _run_planning_step(self, job: ResearchJob, profile: DepthProfile) -> ResearchPlan:
+    def _run_planning_step(
+        self,
+        job: ResearchJob,
+        profile: DepthProfile,
+        gateway: ResearchLLMGateway,
+    ) -> ResearchPlan:
         self._repo.update_progress(
             job_id=job.id,
             phase=JobPhase.PLANNING,
             progress_percent=6,
             message=f"Erstelle Recherche-Plan ({profile.subtopic_count} Teilgebiete)...",
         )
-        plan = create_research_plan(self._llm, job, profile)
+        plan = create_research_plan(gateway, job, profile)
         self._repo.save_plan_checkpoint(job.id, plan)
         return plan
 
-    def _run_baseline_step(self, job: ResearchJob, profile: DepthProfile) -> str:
+    def _run_baseline_step(
+        self,
+        job: ResearchJob,
+        profile: DepthProfile,
+        gateway: ResearchLLMGateway,
+    ) -> str:
         if not (profile.use_deep_research_agent and self._settings.enable_deep_research_agent):
             return ""
         self._repo.update_progress(
@@ -173,7 +190,7 @@ class ResearchOrchestrator:
             progress_percent=14,
             message=f"Führe autonome Deep-Research-Voranalyse ({profile.deep_agent_name}) aus...",
         )
-        baseline = self._llm.run_deep_research_agent(
+        baseline = gateway.run_deep_research_agent(
             prompt=f"Recherchiere umfassend zum Thema: {job.topic}\n{job.focus_instructions}",
             agent_name=profile.deep_agent_name,
             on_poll_tick=lambda: self._check_alive(job.id),
@@ -188,6 +205,7 @@ class ResearchOrchestrator:
         profile: DepthProfile,
         existing_findings: list[SubTopicFinding],
         baseline_markdown: str,
+        gateway: ResearchLLMGateway,
     ) -> list[SubTopicFinding]:
         completed_by_index: dict[int, SubTopicFinding] = {
             f.subtopic_index: f for f in existing_findings
@@ -208,7 +226,7 @@ class ResearchOrchestrator:
             )
 
             finding = investigate_subtopic(
-                gateway=self._llm,
+                gateway=gateway,
                 web_fetcher=self._fetcher,
                 job=job,
                 subtopic=subtopic,

@@ -4,18 +4,32 @@ from src.domain.enums import ResearchDepth
 from src.domain.models import DepthProfile
 
 # --- KI-Modelle & Agenten (gemäß aktuellem Google GenAI SDK >= 2.30.1) ---
-DEFAULT_FAST_MODEL: str = "gemini-3.8-flash"
-DEFAULT_DEEP_MODEL: str = "gemini-4-argon"
+DEFAULT_MODEL: str = "gemini-3.5-flash-lite"
+DEFAULT_FAST_MODEL: str = DEFAULT_MODEL
+DEFAULT_DEEP_MODEL: str = DEFAULT_MODEL
 FALLBACK_LITE_MODEL: str = "gemini-3.5-flash-lite"
 
+FALLBACK_AVAILABLE_MODELS: tuple[str, ...] = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-4-argon",
+)
+
 CANDIDATE_FAST_MODELS: tuple[str, ...] = (
-    DEFAULT_FAST_MODEL,
-    FALLBACK_LITE_MODEL,
+    DEFAULT_MODEL,
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.8-flash",
 )
 CANDIDATE_DEEP_MODELS: tuple[str, ...] = (
-    DEFAULT_DEEP_MODEL,
-    DEFAULT_FAST_MODEL,
-    FALLBACK_LITE_MODEL,
+    DEFAULT_MODEL,
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-4-argon",
 )
 
 DEEP_RESEARCH_AGENT_FAST: str = "deep-research-preview-04-2026"

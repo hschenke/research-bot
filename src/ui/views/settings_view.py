@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.__version__ import __version__
+from src.config.constants import DEFAULT_MODEL
 from src.config.settings import AppSettings
 from src.domain.enums import AuthRole
 from src.storage.base_repository import ResearchRepository
@@ -33,10 +34,9 @@ def render_settings_view(
 
         with st.container(border=True):
             st.markdown("**🧠 KI-Engine (Google GenAI)**")
-            st.write(f"Schnelles Modell: `{settings.gemini_fast_model}`")
-            st.write(f"Deep-Modell: `{settings.gemini_deep_model}`")
+            st.write(f"Standard-Modell: `{DEFAULT_MODEL}`")
             if settings.has_gemini_configured:
-                st.success("GEMINI_API_KEY ist hinterlegt.")
+                st.success("GEMINI_API_KEY ist hinterlegt (Modelle dynamisch abrufbar).")
             else:
                 st.error("GEMINI_API_KEY fehlt.")
 

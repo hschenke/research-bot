@@ -35,9 +35,11 @@ class TestSqlResearchRepository:
             depth=ResearchDepth.DEEP,
             language="de",
             notify_email="analyst@beispiel.de",
+            model="gemini-3.6-flash",
         )
         job = repo.create_job(req)
         assert job.status == JobStatus.QUEUED
+        assert job.model == "gemini-3.6-flash"
 
         # Erster Worker beansprucht den Job erfolgreich; zweiter Worker wird atomar abgewiesen
         assert repo.claim_job(job.id, worker_id="worker-1") is True

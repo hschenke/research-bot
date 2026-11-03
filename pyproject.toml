@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-bot"
+version = "0.1.0"
+description = "Autonomer, hintergrundfähiger Web-Research-Bot mit Streamlit-UI, Turso-Persistenz, GitHub-Actions-Worker (>1h) und E-Mail-Benachrichtigung."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=2.30.1",
+    "pydantic>=2.9.0",
+    "requests>=2.32.3",
+    "beautifulsoup4>=4.12.3",
+    "markdown>=3.7",
+    "pyyaml>=6.0.2",
+    "python-dotenv>=1.0.1",
+    "streamlit>=1.40.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "ruff>=0.8.0",
+    "pip-audit>=2.7.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade (modern Python typing & syntax)
+    "S",   # bandit security checks
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501", # line length handled pragmatically in templates/prompts
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S105", "S106"]

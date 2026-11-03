@@ -115,8 +115,9 @@ class ResearchOrchestrator:
         checkpoint = self._repo.load_checkpoint(job.id)
         self._check_alive(job.id)
 
+        job_model = getattr(job, "model", None) or self._settings.gemini_fast_model
         llm = (
-            self._llm.with_preferred_model(job.model)
+            self._llm.with_preferred_model(job_model)
             if hasattr(self._llm, "with_preferred_model")
             else self._llm
         )
@@ -145,7 +146,7 @@ class ResearchOrchestrator:
         model_label = (
             profile.deep_agent_name
             if (profile.use_deep_research_agent and self._settings.enable_deep_research_agent)
-            else (job.model or self._settings.gemini_fast_model)
+            else (job_model or self._settings.gemini_fast_model)
         )
 
         report = synthesize_final_report(

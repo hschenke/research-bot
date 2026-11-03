@@ -154,8 +154,9 @@ def _handle_job_submission(
         job = repository.create_job(validated)
         dispatcher = JobDispatcher(settings)
         worker_label = dispatcher.dispatch(job.id)
+        effective_model = getattr(job, "model", None) or model or DEFAULT_MODEL
         st.success(
-            f"✅ Auftrag **`{job.id}`** wurde mit Modell **`{job.model}`** gestartet ({worker_label})! "
+            f"✅ Auftrag **`{job.id}`** wurde mit Modell **`{effective_model}`** gestartet ({worker_label})! "
             "Du kannst dieses Fenster jederzeit schließen – bei Fertigstellung wirst du per E-Mail informiert. "
             "Den Live-Fortschritt findest du im Tab **⏳ Laufende Jobs**."
         )

@@ -83,9 +83,10 @@ def _render_job_card(
     with st.container(border=True):
         top_left, top_right = st.columns([4, 1], vertical_alignment="center")
         with top_left:
+            job_model = getattr(job, "model", None) or "gemini-3.5-flash-lite"
             st.markdown(f"**{job.topic}**")
             st.caption(
-                f"{badge} · ID `{job.id}` · 🤖 `{job.model}` · {profile.label} · Angelegt: `{job.created_at[:19]} UTC`"
+                f"{badge} · ID `{job.id}` · 🤖 `{job_model}` · {profile.label} · Angelegt: `{job.created_at[:19]} UTC`"
             )
         with top_right:
             can_cancel = is_active and role == AuthRole.ADMIN and not job.cancel_requested

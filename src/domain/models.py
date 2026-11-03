@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -94,7 +95,7 @@ class ProgressLogEntry(BaseModel):
 class ResearchJob(BaseModel):
     """Persistenter Zustand eines Recherche-Auftrags in der Datenbank."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="allow")
 
     id: str
     topic: str
@@ -102,7 +103,7 @@ class ResearchJob(BaseModel):
     depth: ResearchDepth = ResearchDepth.STANDARD
     language: str = "de"
     notify_email: str = ""
-    model: str = "gemini-3.5-flash-lite"
+    model: str = Field(default="gemini-3.5-flash-lite")
     status: JobStatus = JobStatus.QUEUED
     phase: JobPhase = JobPhase.QUEUED
     progress_percent: int = Field(default=0, ge=0, le=100)
@@ -116,6 +117,11 @@ class ResearchJob(BaseModel):
     completed_at: str | None = None
     heartbeat_at: str | None = None
     progress_log: list[ProgressLogEntry] = Field(default_factory=list)
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "model":
+            return "gemini-3.5-flash-lite"
+        raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
 
 class ResearchReport(BaseModel):

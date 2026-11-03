@@ -1,0 +1,232 @@
+"""Tests für 3-Fehler-Limit, 429-Web-Fallback, Teilergebnisse, Live-Aktionsanzeige & Tab-Stabilität."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import TypeVar
+from unittest.mock import MagicMock
+
+import pytest
+from pydantic import BaseModel
+from src.config.settings import AppSettings
+from src.domain.enums import JobPhase, JobStatus, ResearchDepth
+from src.domain.exceptions import LLMProviderError
+from src.domain.models import ResearchRequest, SourceCitation
+from src.research.gemini_client import GeminiInteractionsGateway, GroundedGeneration
+from src.research.llm_helpers import create_fast_genai_client
+from src.research.orchestrator import ResearchOrchestrator
+from src.research.web_fetcher import SafeWebFetcher
+from src.research.web_search_fallback import _extract_ddg_target_url
+from src.storage.executor import SqliteExecutor
+from src.storage.repository import SqlResearchRepository
+from streamlit.testing.v1 import AppTest
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+class _QuotaOnThirdSubtopicLLM:
+    """Simuliert 2 erfolgreiche Teilgebiete und einen 429-Quota-Abbruch beim 3. Teilgebiet."""
+
+    def __init__(self) -> None:
+        self.grounded_calls = 0
+
+    def generate_structured(
+        self,
+        prompt: str,
+        system_instruction: str,
+        schema_cls: type[ModelT],
+        prefer_deep: bool = False,
+    ) -> ModelT:
+        _ = (prompt, system_instruction, prefer_deep)
+        if "subtopics" in schema_cls.model_fields:
+            return schema_cls.model_validate(
+                {
+                    "normalized_title": "Beste Badegebiete Europas",
+                    "objective_summary": "Wasserqualität, Infrastruktur und Klima.",
+                    "subtopics": [
+                        {"title": "Wasserqualität", "guiding_question": "Q1", "search_queries": ["s1"]},
+                        {"title": "Infrastruktur", "guiding_question": "Q2", "search_queries": ["s2"]},
+                        {"title": "Risikoanalyse", "guiding_question": "Q3", "search_queries": ["s3"]},
+                    ],
+                }
+            )
+        raise LLMProviderError("Error code: 429 - You exceeded your current quota (too_many_requests)")
+
+    def generate_grounded(
+        self,
+        prompt: str,
+        system_instruction: str,
+        use_url_context: bool = True,
+        prefer_deep: bool = False,
+    ) -> GroundedGeneration:
+        _ = (system_instruction, use_url_context, prefer_deep)
+        self.grounded_calls += 1
+        if "Teilgebiet 3" in prompt:
+            raise LLMProviderError(
+                "Error code: 429 - {'error': {'message': 'You exceeded your current quota', 'code': 'too_many_requests'}}"
+            )
+        return GroundedGeneration(
+            text="Verifizierte Fakten zum Badegebiet.\n- Exzellente Wasserqualität nach EU-Norm.",
+            citations=[SourceCitation(url="https://example.org/badesee", title="EU Badegewässerbericht")],
+            model_used="gemini-3.5-flash-lite",
+        )
+
+    def run_deep_research_agent(
+        self,
+        prompt: str,
+        agent_name: str,
+        on_poll_tick: Callable[[], None] | None = None,
+    ) -> GroundedGeneration:
+        _ = (prompt, agent_name, on_poll_tick)
+        raise NotImplementedError
+
+
+def test_fast_genai_client_disables_hidden_sdk_retry_backoff() -> None:
+    client = create_fast_genai_client("dummy_test_api_key_without_network")
+    retry_cfg = client.interactions.sdk_configuration.retry_config
+    assert retry_cfg.strategy == "none"
+
+
+def test_gateway_caps_429_at_three_attempts_and_switches_to_external_web_fallback() -> None:
+    settings = AppSettings(gemini_api_key="valid_test_key")
+    mock_client = MagicMock()
+    quota_err = RuntimeError(
+        "Error code: 429 - {'error': {'message': 'You exceeded your current quota', 'code': 'too_many_requests'}}"
+    )
+    mock_client.interactions.create.side_effect = quota_err
+
+    recorded_actions: list[str] = []
+    fake_citations = [
+        SourceCitation(
+            url="https://de.wikipedia.org/wiki/Badesee",
+            title="Wikipedia: Badesee",
+            snippet="Badeseen mit ausgezeichneter Wasserqualität in Alpennähe.",
+        )
+    ]
+
+    gw = GeminiInteractionsGateway(
+        settings,
+        shared_client=mock_client,
+        on_action=recorded_actions.append,
+        fast_mode=True,
+        web_search_fn=lambda _q, _lang: fake_citations,
+    )
+    res = gw.generate_grounded(
+        prompt="Gesamtthema: bestes gebiet zum baden\nSuchfokus: Badeseen Wasserqualität",
+        system_instruction="Antworte präzise.",
+        use_url_context=False,
+        prefer_deep=False,
+    )
+
+    # 3 Grounded-Versuche + max. 2 schnelle Untooled-Versuche = 5 kurze Calls (keine Endlosschleife)
+    assert mock_client.interactions.create.call_count == 5
+    assert gw._quota_state.is_grounding_exhausted() is True
+    assert res.model_used == "web-fallback-extractive"
+    assert len(res.citations) == 1
+    assert "Wikipedia: Badesee" in res.text
+    assert any("Alternative Methode" in a for a in recorded_actions)
+
+
+def test_ddg_redirect_unpacking_sanitizes_urls() -> None:
+    raw = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.umweltbundesamt.de%2Fbadegewaesser&rut=abc"
+    assert _extract_ddg_target_url(raw) == "https://www.umweltbundesamt.de/badegewaesser"
+    evil = "//duckduckgo.com/l/?uddg=javascript%3Aalert(1)"
+    assert _extract_ddg_target_url(evil) == "#"
+
+
+def test_live_action_updates_status_without_polluting_progress_log() -> None:
+    repo = SqlResearchRepository(SqliteExecutor(":memory:"))
+    repo.initialize_schema()
+    job = repo.create_job(ResearchRequest(topic="Live-Action Test"))
+    repo.claim_job(job.id, worker_id="w1")
+
+    repo.update_progress(
+        job.id,
+        phase=JobPhase.INVESTIGATING,
+        progress_percent=50,
+        message="Teilgebiet abgeschlossen (1/3): Wasserqualität",
+        live_status_override="[Teilgebiet 2/3] 🌐 KI-Websuche via gemini-3.5-flash-lite...",
+    )
+    mid_job = repo.get_job(job.id)
+    assert mid_job is not None
+    assert mid_job.status_message == "[Teilgebiet 2/3] 🌐 KI-Websuche via gemini-3.5-flash-lite..."
+    assert mid_job.progress_log[-1].message == "Teilgebiet abgeschlossen (1/3): Wasserqualität"
+    log_count_before = len(mid_job.progress_log)
+
+    repo.update_live_action(job.id, "[Teilgebiet 2/3] ⚡ API-Limit (429) – wechsle Modell (2/3)...")
+    after_job = repo.get_job(job.id)
+    assert after_job is not None
+    assert after_job.status_message == "[Teilgebiet 2/3] ⚡ API-Limit (429) – wechsle Modell (2/3)..."
+    assert len(after_job.progress_log) == log_count_before
+    repo.close()
+
+
+def test_orchestrator_completes_with_partial_result_on_429_instead_of_failing() -> None:
+    repo = SqlResearchRepository(SqliteExecutor(":memory:"))
+    repo.initialize_schema()
+    settings = AppSettings(gemini_api_key="test_key")
+    fetcher = SafeWebFetcher(dns_resolver=lambda _h, _p: ["93.184.216.34"])
+    fetcher.fetch_many_tolerant = MagicMock(return_value=[])  # type: ignore[method-assign]
+
+    job = repo.create_job(ResearchRequest(topic="bestes gebiet zum baden", depth=ResearchDepth.QUICK))
+    orchestrator = ResearchOrchestrator(settings, repo, _QuotaOnThirdSubtopicLLM(), fetcher)
+    report = orchestrator.execute_job(job.id, worker_id="quick-worker")
+
+    assert report is not None
+    assert "Hinweis (Teilergebnis)" in report.content_markdown
+    assert "## 1. Wasserqualität" in report.content_markdown
+    assert "## 2. Infrastruktur" in report.content_markdown
+
+    final_job = repo.get_job(job.id)
+    assert final_job is not None
+    assert final_job.status == JobStatus.COMPLETED
+    assert "Teilergebnis" in final_job.status_message
+    assert "(2/3 Teilgebiete)" in final_job.status_message
+    fetcher.close()
+    repo.close()
+
+
+def test_stop_and_resume_buttons_stay_on_active_jobs_tab(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_nav_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+    job = repo.create_job(ResearchRequest(topic="Tab-Bleibe-Test", depth=ResearchDepth.QUICK))
+    repo.claim_job(job.id, worker_id="local-w1")
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.new_research_view.fetch_available_gemini_models", lambda _k: ["gemini-3.5-flash-lite"])
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.dispatch", lambda *_a, **_kw: "Turbo")
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.stop_job_execution", lambda *_a, **_kw: None)
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        at = AppTest.from_function(_entry).run()
+        at.radio(key="_active_nav_tab").set_value("jobs").run()
+        assert at.radio(key="_active_nav_tab").value == "jobs"
+
+        # Klick auf "⏹️ Stopp" (Anzahl aktiver Jobs sinkt von 1 auf 0) -> muss im Tab "jobs" bleiben!
+        at.button(key=f"cancel_{job.id}").click().run()
+        assert at.radio(key="_active_nav_tab").value == "jobs"
+        cancelled_job = repo.get_job(job.id)
+        assert cancelled_job is not None
+        assert cancelled_job.status == JobStatus.CANCELLED
+
+        # Klick auf "🔁 Fortsetzen" (Anzahl aktiver Jobs steigt von 0 auf 1) -> muss im Tab "jobs" bleiben!
+        at.button(key=f"retry_{job.id}").click().run()
+        assert at.radio(key="_active_nav_tab").value == "jobs"
+        resumed_job = repo.get_job(job.id)
+        assert resumed_job is not None
+        assert resumed_job.status == JobStatus.QUEUED
+
+    repo.close()

@@ -91,8 +91,18 @@ class ResearchRepository(ABC):
         phase: JobPhase,
         progress_percent: int,
         message: str,
+        live_status_override: str | None = None,
     ) -> None:
         """Aktualisiert Phase, Fortschritt, Heartbeat und Aktivitätsprotokoll eines Jobs."""
+
+    def update_live_action(
+        self,
+        job_id: str,
+        action_message: str,
+        progress_percent: int | None = None,
+    ) -> None:
+        """Aktualisiert die Live-Aktionsanzeige hinter der Prozentzahl ohne Log-Duplikat."""
+        _ = (job_id, action_message, progress_percent)
 
     @abstractmethod
     def touch_heartbeat(self, job_id: str) -> None:
@@ -131,7 +141,12 @@ class ResearchRepository(ABC):
         """Prüft leichtgewichtig, ob ein Abbruch für diesen Auftrag angefordert wurde."""
 
     @abstractmethod
-    def mark_job_completed(self, job_id: str, report: ResearchReport) -> None:
+    def mark_job_completed(
+        self,
+        job_id: str,
+        report: ResearchReport,
+        status_note: str | None = None,
+    ) -> None:
         """Speichert den fertigen Bericht und markiert den Job atomar als `completed`."""
 
     @abstractmethod

@@ -81,12 +81,18 @@ class CheckpointAndReportStore:
         row = res.rows[0]
         return not bool(int(row.get("cancel_requested") or 0)) and row.get("status") != "cancelled"
 
-    def persist_completed_report(self, job_id: str, report: ResearchReport) -> None:
+    def persist_completed_report(
+        self,
+        job_id: str,
+        report: ResearchReport,
+        status_note: str | None = None,
+    ) -> None:
         clean_id = job_id.strip()
         if not self._is_job_still_active(clean_id):
             return
 
         now_iso = utc_now_iso()
+        final_status_msg = (status_note or "Recherche erfolgreich abgeschlossen.").strip()[:240]
         upsert_report_sql = """
             INSERT INTO research_reports (
                 job_id, title, topic, depth, language, executive_summary,
@@ -107,7 +113,7 @@ class CheckpointAndReportStore:
             SET status = 'completed',
                 phase = 'completed',
                 progress_percent = 100,
-                status_message = 'Recherche erfolgreich abgeschlossen.',
+                status_message = ?,
                 completed_at = ?,
                 heartbeat_at = ?
             WHERE id = ? AND cancel_requested = 0 AND status != 'cancelled'
@@ -131,7 +137,7 @@ class CheckpointAndReportStore:
                         report.created_at or now_iso,
                     ),
                 ),
-                (update_job_sql, (now_iso, now_iso, clean_id)),
+                (update_job_sql, (final_status_msg, now_iso, now_iso, clean_id)),
             ]
         )
 

@@ -1,10 +1,10 @@
-"""Tab 2: Live-Monitoring laufender Jobs inkl. Sofort-Abbruch, Direkt-Löschung & Auto-Recovery."""
+"""Tab 2: Live-Monitoring laufender Jobs inkl. Live-Aktionsanzeige, Sofort-Stopp & Direkt-Löschung."""
 
 from __future__ import annotations
 
 import streamlit as st
 
-from src.config.constants import DEPTH_PROFILES
+from src.config.constants import DEPTH_PROFILES, UI_LIVE_REFRESH_INTERVAL
 from src.config.settings import AppSettings
 from src.domain.enums import AuthRole, JobStatus
 from src.domain.models import ResearchJob
@@ -27,11 +27,11 @@ def render_active_jobs_view(
     repository: ResearchRepository,
     role: AuthRole,
 ) -> None:
-    """Zeigt aktive Jobs mit automatischer Teil-Aktualisierung (alle 10s via `st.fragment`)."""
+    """Zeigt aktive Jobs mit schneller Live-Aktionsanzeige (alle 3s via `st.fragment`)."""
     _render_live_jobs_fragment(settings=settings, repository=repository, role=role)
 
 
-@st.fragment(run_every="10s")
+@st.fragment(run_every=UI_LIVE_REFRESH_INTERVAL)
 def _render_live_jobs_fragment(
     settings: AppSettings,
     repository: ResearchRepository,
@@ -43,11 +43,12 @@ def _render_live_jobs_fragment(
     total_active_count = repository.count_jobs(statuses=ACTIVE_JOB_STATUSES)
     rendered_tab_count = st.session_state.get("_tab_active_count")
     if rendered_tab_count is not None and rendered_tab_count != total_active_count:
+        st.session_state["_force_nav_tab"] = "jobs"
         st.rerun()
 
     col_head, col_btn = st.columns([4, 1], vertical_alignment="center")
     with col_head:
-        st.caption("🔄 Aktualisiert sich automatisch alle 10 Sekunden ohne Seiten-Reload.")
+        st.caption("🔄 Aktualisiert sich automatisch alle 3 Sekunden (inkl. Live-Aktionsanzeige).")
     with col_btn:
         if st.button("Jetzt prüfen", use_container_width=True):
             st.rerun(scope="fragment")
@@ -73,7 +74,9 @@ def _render_live_jobs_fragment(
             )
 
     if recent_finished:
-        _render_recent_finished_section(recent_finished, settings, repository, dispatcher, role, bool(active_jobs))
+        _render_recent_finished_section(
+            recent_finished, settings, repository, dispatcher, role, bool(active_jobs)
+        )
 
 
 def _render_recent_finished_section(
@@ -146,6 +149,11 @@ def _render_job_card(
                     st.text(f"[{entry.timestamp_iso[11:19]}] ({entry.phase.value}) {entry.message}")
 
 
+def _stay_on_jobs_tab_and_rerun() -> None:
+    st.session_state["_force_nav_tab"] = "jobs"
+    st.rerun()
+
+
 def _render_admin_job_actions(
     job: ResearchJob,
     settings: AppSettings,
@@ -159,13 +167,13 @@ def _render_admin_job_actions(
             if st.button("⏹️ Stopp", key=f"cancel_{job.id}", use_container_width=True, help="Prozess sofort beenden"):
                 repository.request_cancellation(job.id)
                 dispatcher.stop_job_execution(job.id, worker_id=job.worker_id)
-                st.rerun()
+                _stay_on_jobs_tab_and_rerun()
         with btn_del:
             if st.button("🗑️ Löschen", key=f"del_active_{job.id}", use_container_width=True, help="Prozess beenden & Auftrag direkt löschen"):
                 repository.request_cancellation(job.id)
                 dispatcher.stop_job_execution(job.id, worker_id=job.worker_id)
                 repository.delete_job_and_report(job.id)
-                st.rerun()
+                _stay_on_jobs_tab_and_rerun()
         return
 
     can_resume = job.status in {JobStatus.FAILED, JobStatus.CANCELLED}
@@ -174,7 +182,7 @@ def _render_admin_job_actions(
         with btn_res:
             if st.button("🔁 Fortsetzen", key=f"retry_{job.id}", use_container_width=True):
                 _resume_interrupted_job(job, settings, repository)
-                st.rerun()
+                _stay_on_jobs_tab_and_rerun()
         with btn_del:
             if st.button("🗑️ Löschen", key=f"del_fin_{job.id}", use_container_width=True):
                 repository.delete_job_and_report(job.id)

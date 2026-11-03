@@ -47,7 +47,7 @@ def _investigate_quick_single_pass(
     lang_name: str,
     on_heartbeat: Callable[[], None] | None,
 ) -> SubTopicFinding:
-    """Schneller Single-Pass mit Web-Grounding für das Profil `Schnellüberblick`."""
+    """Schneller Single-Pass mit Web-Grounding für das Profil `Schnellüberblick` (< 1 Min.)."""
     queries_str = ", ".join(subtopic.search_queries) or subtopic.title
     prompt = (
         f"Gesamtthema: {job.topic}\nTeilgebiet {subtopic.index}: {subtopic.title}\n"
@@ -85,6 +85,7 @@ def investigate_subtopic(
     profile: DepthProfile,
     baseline_excerpt: str = "",
     on_heartbeat: Callable[[], None] | None = None,
+    on_action: Callable[[str], None] | None = None,
 ) -> SubTopicFinding:
     """Untersucht ein Teilthema über Web-Grounding, optionalen Volltext-Abruf und Follow-ups."""
     lang_name = "Deutsch" if job.language == "de" else "English"
@@ -110,39 +111,59 @@ def investigate_subtopic(
     if on_heartbeat:
         on_heartbeat()
 
-    scraped_pages = web_fetcher.fetch_many_tolerant(
-        urls=discover_candidate_urls(initial_grounded),
-        max_pages=profile.max_urls_per_subtopic,
-        cancel_check=on_heartbeat,
-    )
+    try:
+        scraped_pages = web_fetcher.fetch_many_tolerant(
+            urls=discover_candidate_urls(initial_grounded),
+            max_pages=profile.max_urls_per_subtopic,
+            cancel_check=on_heartbeat,
+            on_action=on_action,
+        )
+    except TypeError:
+        scraped_pages = web_fetcher.fetch_many_tolerant(
+            urls=discover_candidate_urls(initial_grounded),
+            max_pages=profile.max_urls_per_subtopic,
+            cancel_check=on_heartbeat,
+        )
+
     page_citations = [
         SourceCitation(url=p.url, title=p.title, snippet=p.text_content[:200]) for p in scraped_pages
     ]
     all_citations = merge_citations(extract_inline_citations(initial_grounded), page_citations)
     evidence_notes = [initial_grounded.text]
 
+    if on_action is not None:
+        on_action("🧩 Verdichte gesammelte Fakten & Primärquellen...")
     structured = _consolidate_evidence_resilient(
         gateway, lang_name, job, subtopic, evidence_notes, scraped_pages, baseline_excerpt
     )
 
-    for _round_idx in range(profile.followup_rounds):
+    for round_idx in range(profile.followup_rounds):
         if not structured.open_questions:
             break
         if on_heartbeat:
             on_heartbeat()
-        followup_res = gateway.generate_grounded(
-            prompt=(
-                f"Schließe gezielt folgende offene Fragen zum Thema '{job.topic} – {subtopic.title}':\n"
-                f"{'; '.join(structured.open_questions[:2])}\nLiefere belastbare Fakten und konkrete URLs."
-            ),
-            system_instruction=system_instruction,
-            use_url_context=False,
-        )
-        evidence_notes.append(followup_res.text)
-        all_citations = merge_citations(all_citations, extract_inline_citations(followup_res))
-        structured = _consolidate_evidence_resilient(
-            gateway, lang_name, job, subtopic, evidence_notes, scraped_pages, baseline_excerpt
-        )
+        if on_action is not None:
+            on_action(f"🔄 Nachrecherche ({round_idx + 1}/{profile.followup_rounds}) zu offenen Detailfragen...")
+        try:
+            followup_res = gateway.generate_grounded(
+                prompt=(
+                    f"Gesamtthema: {job.topic}\nTeilgebiet: {subtopic.title}\n"
+                    f"Schließe gezielt folgende offene Fragen:\n"
+                    f"{'; '.join(structured.open_questions[:2])}\nLiefere belastbare Fakten und konkrete URLs."
+                ),
+                system_instruction=system_instruction,
+                use_url_context=False,
+            )
+            evidence_notes.append(followup_res.text)
+            all_citations = merge_citations(all_citations, extract_inline_citations(followup_res))
+            structured = _consolidate_evidence_resilient(
+                gateway, lang_name, job, subtopic, evidence_notes, scraped_pages, baseline_excerpt
+            )
+        except JobCancelledError:
+            raise
+        except ResearchBotError as exc:
+            logger.warning("Nachrecherche für '%s' übersprungen (%s).", subtopic.title, exc)
+            break
 
     return SubTopicFinding(
         subtopic_index=subtopic.index,

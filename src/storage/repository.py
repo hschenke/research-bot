@@ -189,6 +189,7 @@ class SqlResearchRepository(ResearchRepository):
         phase: JobPhase,
         progress_percent: int,
         message: str,
+        live_status_override: str | None = None,
     ) -> None:
         self._lifecycle_store.append_progress_update(
             existing=self.get_job(job_id),
@@ -196,6 +197,19 @@ class SqlResearchRepository(ResearchRepository):
             phase=phase,
             progress_percent=progress_percent,
             message=message,
+            live_status_override=live_status_override,
+        )
+
+    def update_live_action(
+        self,
+        job_id: str,
+        action_message: str,
+        progress_percent: int | None = None,
+    ) -> None:
+        self._lifecycle_store.update_live_action(
+            job_id=job_id,
+            action_message=action_message,
+            progress_percent=progress_percent,
         )
 
     def touch_heartbeat(self, job_id: str) -> None:
@@ -228,8 +242,13 @@ class SqlResearchRepository(ResearchRepository):
     def is_cancellation_requested(self, job_id: str) -> bool:
         return self._lifecycle_store.is_cancellation_requested(job_id)
 
-    def mark_job_completed(self, job_id: str, report: ResearchReport) -> None:
-        self._report_store.persist_completed_report(job_id, report)
+    def mark_job_completed(
+        self,
+        job_id: str,
+        report: ResearchReport,
+        status_note: str | None = None,
+    ) -> None:
+        self._report_store.persist_completed_report(job_id, report, status_note=status_note)
 
     def mark_job_email_sent(self, job_id: str) -> None:
         self._executor.execute(

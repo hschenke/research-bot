@@ -15,6 +15,8 @@ from src.ui.views.new_research_view import render_new_research_view
 from src.ui.views.reports_view import render_reports_view
 from src.ui.views.settings_view import render_settings_view
 
+NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "settings")
+
 
 @st.cache_resource
 def _get_cached_repository(turso_url: str, sqlite_path: str) -> ResearchRepository:
@@ -25,7 +27,7 @@ def _get_cached_repository(turso_url: str, sqlite_path: str) -> ResearchReposito
 
 
 def run_streamlit_app() -> None:
-    """Initialisiert Seitenlayout, Authentifizierung und synchronisierte Tab-Navigation."""
+    """Initialisiert Seitenlayout, Authentifizierung und zustandsstabile Tab-Navigation."""
     st.set_page_config(
         page_title="Research-Bot",
         page_icon="🔬",
@@ -51,25 +53,38 @@ def run_streamlit_app() -> None:
 
     running_count = repository.count_jobs(statuses=ACTIVE_JOB_STATUSES)
     st.session_state["_tab_active_count"] = running_count
-    jobs_tab_label = (
-        f"⏳ Laufende Jobs ({running_count})" if running_count > 0 else "⏳ Laufende Jobs"
-    )
+
+    forced_tab = st.session_state.pop("_force_nav_tab", None)
+    if forced_tab in NAV_TAB_KEYS:
+        st.session_state["_active_nav_tab"] = forced_tab
 
     requested_tab = str(st.query_params.get("tab", "") or "").lower()
-    if requested_tab == "reports":
-        tab_reports, tab_new, tab_jobs, tab_settings = st.tabs(
-            ["📚 Ergebnisse & Archiv", "🚀 Neue Recherche", jobs_tab_label, "⚙️ Systemstatus"]
-        )
-    else:
-        tab_new, tab_jobs, tab_reports, tab_settings = st.tabs(
-            ["🚀 Neue Recherche", jobs_tab_label, "📚 Ergebnisse & Archiv", "⚙️ Systemstatus"]
+    if "_active_nav_tab" not in st.session_state or st.session_state["_active_nav_tab"] not in NAV_TAB_KEYS:
+        st.session_state["_active_nav_tab"] = (
+            requested_tab if requested_tab in NAV_TAB_KEYS else "new"
         )
 
-    with tab_new:
+    nav_labels: dict[str, str] = {
+        "new": "🚀 Neue Recherche",
+        "jobs": f"⏳ Laufende Jobs ({running_count})" if running_count > 0 else "⏳ Laufende Jobs",
+        "reports": "📚 Ergebnisse & Archiv",
+        "settings": "⚙️ Systemstatus",
+    }
+
+    active_tab = st.radio(
+        "Navigation",
+        options=NAV_TAB_KEYS,
+        format_func=lambda tab_key: nav_labels[tab_key],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="_active_nav_tab",
+    )
+
+    if active_tab == "new":
         render_new_research_view(settings=settings, repository=repository, role=role)
-    with tab_jobs:
+    elif active_tab == "jobs":
         render_active_jobs_view(settings=settings, repository=repository, role=role)
-    with tab_reports:
+    elif active_tab == "reports":
         render_reports_view(settings=settings, repository=repository, role=role)
-    with tab_settings:
+    else:
         render_settings_view(settings=settings, repository=repository, role=role)

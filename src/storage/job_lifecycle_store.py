@@ -24,6 +24,7 @@ class JobLifecycleStore:
         phase: JobPhase,
         progress_percent: int,
         message: str,
+        live_status_override: str | None = None,
     ) -> None:
         if existing is None or existing.cancel_requested or existing.status == JobStatus.CANCELLED:
             return
@@ -32,6 +33,7 @@ class JobLifecycleStore:
         entries.append(
             ProgressLogEntry(timestamp_iso=now_iso, phase=phase, message=message).model_dump()
         )
+        live_text = (live_status_override or message).strip()[:240]
         self._executor.execute(
             """
             UPDATE research_jobs
@@ -47,11 +49,41 @@ class JobLifecycleStore:
             (
                 phase.value,
                 max(0, min(100, progress_percent)),
-                message,
+                live_text,
                 json.dumps(entries[-MAX_PROGRESS_LOG_ENTRIES:], ensure_ascii=False),
                 now_iso,
                 job_id.strip(),
             ),
+        )
+
+    def update_live_action(
+        self,
+        job_id: str,
+        action_message: str,
+        progress_percent: int | None = None,
+    ) -> None:
+        """Schreibt die gerade laufende Detail-Aktion direkt in `status_message` ohne Log-Spam."""
+        cleaned = action_message.strip()[:240]
+        if not cleaned:
+            return
+        now_iso = utc_now_iso()
+        if progress_percent is None:
+            self._executor.execute(
+                """
+                UPDATE research_jobs
+                SET status_message = ?, heartbeat_at = ?
+                WHERE id = ? AND cancel_requested = 0 AND status = 'running'
+                """,
+                (cleaned, now_iso, job_id.strip()),
+            )
+            return
+        self._executor.execute(
+            """
+            UPDATE research_jobs
+            SET status_message = ?, progress_percent = ?, heartbeat_at = ?
+            WHERE id = ? AND cancel_requested = 0 AND status = 'running'
+            """,
+            (cleaned, max(0, min(100, progress_percent)), now_iso, job_id.strip()),
         )
 
     def cancel_immediately(self, existing: ResearchJob | None, job_id: str) -> bool:

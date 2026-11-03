@@ -1,11 +1,16 @@
-"""Phase 1: Strukturierte Zerlegung eines Themas in präzise Teilfragen und Suchstrategien."""
+"""Phase 1: Strukturierte Zerlegung eines Themas in präzise Teilfragen inkl. Direktplan-Fallback."""
 
 from __future__ import annotations
 
+import logging
+
 from pydantic import BaseModel, Field
 
+from src.domain.exceptions import JobCancelledError, ResearchBotError
 from src.domain.models import DepthProfile, ResearchJob, ResearchPlan, SubTopicPlan
 from src.research.gemini_client import ResearchLLMGateway
+
+logger = logging.getLogger(__name__)
 
 
 class _DraftSubTopic(BaseModel):
@@ -24,6 +29,36 @@ class _DraftResearchPlan(BaseModel):
 
 def _language_label(lang_code: str) -> str:
     return "Deutsch" if lang_code.lower() == "de" else "English"
+
+
+def _build_deterministic_fallback_plan(job: ResearchJob, profile: DepthProfile) -> ResearchPlan:
+    """Erstellt bei erschöpftem KI-Kontingent sofort einen sauberen Notfall-Rechercheplan."""
+    topic = job.topic.strip()
+    is_de = job.language.lower() == "de"
+    templates = (
+        [
+            ("Grundlagen, Fakten & aktueller Stand", f"Was sind die wichtigsten aktuellen Fakten zu {topic}?", [topic, f"{topic} Überblick Fakten"]),
+            ("Vergleich, Kriterien & Top-Empfehlungen", f"Welche Optionen, Regionen oder Ansätze schneiden bei {topic} am besten ab?", [f"{topic} Vergleich Empfehlung", f"{topic} Kriterien"]),
+            ("Besonderheiten, Risiken & Praxistipps", f"Welche Rahmenbedingungen, Risiken oder Praxistipps gelten für {topic}?", [f"{topic} Tipps Hinweise", f"{topic} Risiken"]),
+        ]
+        if is_de
+        else [
+            ("Core Facts & Current State", f"What are the most important current facts about {topic}?", [topic, f"{topic} overview facts"]),
+            ("Comparison, Criteria & Top Options", f"Which options or approaches perform best regarding {topic}?", [f"{topic} comparison best options", f"{topic} criteria"]),
+            ("Key Considerations, Risks & Practical Tips", f"What risks, limitations, or practical tips apply to {topic}?", [f"{topic} tips guide", f"{topic} risks"]),
+        ]
+    )
+    count = max(1, min(profile.subtopic_count, len(templates)))
+    subtopics = [
+        SubTopicPlan(index=idx, title=t[0], guiding_question=t[1], search_queries=t[2])
+        for idx, t in enumerate(templates[:count], start=1)
+    ]
+    summary = (
+        f"Kompakte Untersuchung zu '{topic}' entlang von {count} Kernbereichen."
+        if is_de
+        else f"Structured investigation of '{topic}' across {count} core areas."
+    )
+    return ResearchPlan(normalized_title=topic, objective_summary=summary, subtopics=subtopics)
 
 
 def create_research_plan(
@@ -51,12 +86,18 @@ def create_research_plan(
         "Formuliere pro Teilthema eine präzise Leitfrage sowie 3 gezielte Suchanfragen."
     )
 
-    draft = gateway.generate_structured(
-        prompt=prompt,
-        system_instruction=system_instruction,
-        schema_cls=_DraftResearchPlan,
-        prefer_deep=profile.subtopic_count >= 10,
-    )
+    try:
+        draft = gateway.generate_structured(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            schema_cls=_DraftResearchPlan,
+            prefer_deep=profile.subtopic_count >= 10,
+        )
+    except JobCancelledError:
+        raise
+    except ResearchBotError as exc:
+        logger.warning("KI-Planung fehlgeschlagen (%s) – nutze direkten Fallback-Rechercheplan.", exc)
+        return _build_deterministic_fallback_plan(job, profile)
 
     limited_drafts = draft.subtopics[: profile.subtopic_count]
     subtopics = [
@@ -70,14 +111,7 @@ def create_research_plan(
     ]
 
     if not subtopics:
-        subtopics = [
-            SubTopicPlan(
-                index=1,
-                title=job.topic,
-                guiding_question=f"Was sind die wichtigsten aktuellen Erkenntnisse zu {job.topic}?",
-                search_queries=[job.topic],
-            )
-        ]
+        return _build_deterministic_fallback_plan(job, profile)
 
     return ResearchPlan(
         normalized_title=draft.normalized_title.strip() or job.topic,

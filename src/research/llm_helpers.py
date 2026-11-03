@@ -1,10 +1,11 @@
-"""Hilfsfunktionen für Modell-Filterung, Antwort-Parsing, Backoff und Fehlerklassifikation."""
+"""Hilfsfunktionen für SDK-Setup, Modell-Filterung, Antwort-Parsing, Quota-Status & Backoff."""
 
 from __future__ import annotations
 
 import logging
 import random
 import re
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -17,6 +18,8 @@ from src.config.constants import (
     DEPRECATED_EXACT_MODELS,
     DEPRECATED_MODEL_PREFIXES,
     FALLBACK_AVAILABLE_MODELS,
+    GROUNDING_QUOTA_COOLDOWN_SECONDS,
+    LLM_FAST_TIMEOUT_SECONDS,
     RETRY_BACKOFF_BASE_SECONDS,
     RETRY_BACKOFF_MAX_SECONDS,
 )
@@ -48,6 +51,7 @@ _TRANSIENT_ERROR_KEYWORDS: tuple[str, ...] = (
     "504",
     "500",
     "429",
+    "too_many_requests",
     "service_unavailable",
     "high demand",
     "overloaded",
@@ -62,8 +66,49 @@ _TRANSIENT_ERROR_KEYWORDS: tuple[str, ...] = (
     "leere ",
 )
 
-_QUOTA_KEYWORDS: tuple[str, ...] = ("429", "quota", "resource_exhausted", "ratelimit")
+_QUOTA_KEYWORDS: tuple[str, ...] = (
+    "429",
+    "too_many_requests",
+    "quota",
+    "resource_exhausted",
+    "ratelimit",
+)
 _JSON_FENCE_PATTERN = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+
+
+class SharedQuotaState:
+    """Thread-sicherer Cooldown-Tracker, damit parallele Worker erschöpfte Quotas sofort überspringen."""
+
+    def __init__(self, cooldown_seconds: float = GROUNDING_QUOTA_COOLDOWN_SECONDS) -> None:
+        self._cooldown = cooldown_seconds
+        self._lock = threading.Lock()
+        self._exhausted_until: float = 0.0
+
+    def is_grounding_exhausted(self) -> bool:
+        with self._lock:
+            return time.monotonic() < self._exhausted_until
+
+    def mark_grounding_exhausted(self) -> None:
+        with self._lock:
+            self._exhausted_until = time.monotonic() + self._cooldown
+
+
+def create_fast_genai_client(api_key: str) -> genai.Client:
+    """Erstellt einen `genai.Client` ohne versteckte 30-Sekunden-SDK-Endlos-Retries."""
+    http_opts = {
+        "timeout": int(LLM_FAST_TIMEOUT_SECONDS * 1000),
+        "retry_options": {"attempts": 1},
+    }
+    try:
+        client = genai.Client(api_key=api_key, http_options=http_opts)
+    except TypeError:
+        client = genai.Client(api_key=api_key)
+
+    sdk_cfg = getattr(getattr(client, "interactions", None), "sdk_configuration", None)
+    retry_cfg = getattr(sdk_cfg, "retry_config", None)
+    if retry_cfg is not None and isinstance(getattr(retry_cfg, "strategy", None), str):
+        retry_cfg.strategy = "none"
+    return client
 
 
 def is_supported_generative_model(model_name: str) -> bool:
@@ -106,7 +151,7 @@ def fetch_available_gemini_models(api_key: str) -> list[str]:
         return list(FALLBACK_AVAILABLE_MODELS)
 
     try:
-        client = genai.Client(api_key=clean_key)
+        client = create_fast_genai_client(clean_key)
         raw_names = [m.name.replace("models/", "") for m in client.models.list()]
         filtered = [m for m in raw_names if is_supported_generative_model(m)]
         if DEFAULT_MODEL in filtered:
@@ -124,6 +169,25 @@ def fetch_available_gemini_models(api_key: str) -> list[str]:
 def strip_json_code_fences(raw_text: str) -> str:
     """Entfernt optionale Markdown-Codeblöcke um eine JSON-Antwort."""
     return _JSON_FENCE_PATTERN.sub("", raw_text.strip()).strip()
+
+
+def extract_search_query_from_prompt(prompt: str) -> str:
+    """Extrahiert eine prägnante Web-Suchanfrage aus dem Analyse-Prompt für den Direkt-Fallback."""
+    topic_part = ""
+    focus_part = ""
+    for raw_line in prompt.splitlines():
+        line = raw_line.strip()
+        if line.startswith(("Gesamtthema:", "Thema:")):
+            topic_part = line.split(":", 1)[1].strip()
+        elif line.startswith(("Suchfokus:", "Empfohlene Suchbegriffe:", "Teilgebiet", "Teilthema")):
+            val = line.split(":", 1)[1].strip() if ":" in line else line
+            if not focus_part:
+                focus_part = val.split(",")[0].strip()
+    combined = f"{topic_part} {focus_part}".strip()
+    if combined:
+        return combined[:150]
+    first_line = next((ln.strip() for ln in prompt.splitlines() if ln.strip()), "")
+    return first_line[:150]
 
 
 def extract_interaction_text(interaction: Any) -> str:
@@ -174,15 +238,15 @@ def is_transient_llm_error(exc: Exception) -> bool:
 
 
 def is_quota_error(exc: Exception) -> bool:
-    """Erkennt spezifische Quota-/Rate-Limit-Meldungen."""
+    """Erkennt spezifische Quota-/Rate-Limit-Meldungen (HTTP 429 / too_many_requests)."""
     msg = str(exc).lower()
     return any(keyword in msg for keyword in _QUOTA_KEYWORDS)
 
 
 def compute_backoff_seconds(attempt_index: int) -> float:
-    """Berechnet exponentiellen Backoff mit leichtem Jitter gegen Lastspitzen."""
+    """Berechnet kurzen exponentiellen Backoff mit leichtem Jitter gegen Lastspitzen."""
     raw = min(RETRY_BACKOFF_MAX_SECONDS, RETRY_BACKOFF_BASE_SECONDS * (2**attempt_index))
-    jitter = random.uniform(0.0, 0.6)  # noqa: S311 - nur für unkritischen Retry-Jitter
+    jitter = random.uniform(0.0, 0.35)  # noqa: S311 - nur für unkritischen Retry-Jitter
     return raw + jitter
 
 

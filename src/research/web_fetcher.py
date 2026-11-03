@@ -6,7 +6,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -153,8 +153,9 @@ class SafeWebFetcher:
         urls: list[str],
         max_pages: int,
         cancel_check: Callable[[], None] | None = None,
+        on_action: Callable[[str], None] | None = None,
     ) -> list[FetchedWebPage]:
-        """Lädt bis zu `max_pages` Webseiten; begrenzt Fehlversuche und prüft auf Abbruch."""
+        """Lädt bis zu `max_pages` Webseiten; begrenzt Fehlversuche und meldet Live-Aktionen."""
         if max_pages <= 0 or not urls:
             return []
 
@@ -174,6 +175,10 @@ class SafeWebFetcher:
                 continue
             seen_urls.add(candidate)
             attempts += 1
+
+            if on_action is not None:
+                host = (urlparse(candidate).hostname or candidate)[:45]
+                on_action(f"📄 Lade Webseite ({len(fetched) + 1}/{max_pages}): {host}...")
 
             try:
                 page = self.fetch_page(candidate)

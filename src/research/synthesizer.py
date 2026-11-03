@@ -1,8 +1,9 @@
-"""Phase 3: Synthese aller Teil-Ergebnisse in einen strukturierten, quellenbelegten Gesamtbericht."""
+"""Phase 3: Synthese aller Teil-Ergebnisse in einen strukturierten Gesamt- oder Teilbericht."""
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
@@ -73,12 +74,33 @@ def _build_sources_section(citations: list[SourceCitation], language: str) -> st
     return "\n".join(lines)
 
 
+def _build_partial_notice(plan: ResearchPlan, findings: list[SubTopicFinding], language: str) -> str:
+    """Erstellt einen transparenten Hinweisblock, falls aufgrund von Limits ein Teilergebnis vorliegt."""
+    total = len(plan.subtopics)
+    if total <= 0 or len(findings) >= total:
+        return ""
+    done_indices = {f.subtopic_index for f in findings}
+    skipped = [st.title for st in plan.subtopics if st.index not in done_indices]
+    skipped_str = ", ".join(skipped)
+    if language == "de":
+        return (
+            f"> **Hinweis (Teilergebnis):** Aufgrund von API-Ratenlimits oder Zeitbudget wurden "
+            f"**{len(findings)} von {total}** geplanten Teilgebieten ausgewertet"
+            + (f" (übersprungen: _{skipped_str}_)." if skipped_str else ".")
+        )
+    return (
+        f"> **Note (Partial Result):** Due to API quota or time budget limits, "
+        f"**{len(findings)} of {total}** planned subtopics were evaluated"
+        + (f" (skipped: _{skipped_str}_)." if skipped_str else ".")
+    )
+
+
 def _build_fallback_overview(
     job: ResearchJob,
     plan: ResearchPlan,
     findings: list[SubTopicFinding],
 ) -> _ExecutiveSummarySchema:
-    """Erstellt bei API-Spitzen eine ausfallsichere Zusammenfassung aus den bereits erhobenen Teilbefunden."""
+    """Erstellt bei API-Spitzen sofort eine Zusammenfassung aus den bereits erhobenen Teilbefunden."""
     takeaways: list[str] = []
     for finding in findings:
         for fact in finding.key_facts:
@@ -112,26 +134,32 @@ def _build_fallback_overview(
 
 def _assemble_report_markdown(
     overview: _ExecutiveSummarySchema,
+    plan: ResearchPlan,
     findings: list[SubTopicFinding],
     citations: list[SourceCitation],
     language: str,
 ) -> str:
-    """Fügt Executive Summary, alle Detailkapitel, Fazit und Quellenverzeichnis sauber zusammen."""
+    """Fügt Executive Summary, optionalen Teilergebnis-Hinweis, Kapitel, Fazit & Quellen zusammen."""
     takeaways_heading = "## Zentrale Erkenntnisse" if language == "de" else "## Key Takeaways"
     conclusion_heading = (
         "## Übergreifendes Fazit & Ausblick" if language == "de" else "## Synthesis & Outlook"
     )
+    partial_notice = _build_partial_notice(plan, findings, language)
 
-    sections: list[str] = [
-        f"# {overview.report_title.strip()}",
-        "",
-        "## Executive Summary",
-        "",
-        overview.executive_summary.strip(),
-        "",
-        takeaways_heading,
-        "",
-    ]
+    sections: list[str] = [f"# {overview.report_title.strip()}"]
+    if partial_notice:
+        sections.extend(["", partial_notice])
+    sections.extend(
+        [
+            "",
+            "## Executive Summary",
+            "",
+            overview.executive_summary.strip(),
+            "",
+            takeaways_heading,
+            "",
+        ]
+    )
     for point in overview.key_takeaways:
         if point.strip():
             sections.append(f"- {point.strip()}")
@@ -162,8 +190,9 @@ def synthesize_final_report(
     baseline_markdown: str,
     model_used: str,
     duration_seconds: int,
+    on_action: Callable[[str], None] | None = None,
 ) -> ResearchReport:
-    """Erstellt aus allen Checkpoints den vollständigen, bereinigten `ResearchReport`."""
+    """Erstellt aus allen Checkpoints den vollständigen oder teilweisen `ResearchReport`."""
     lang_name = "Deutsch" if job.language == "de" else "English"
     citations = collect_unique_citations(findings)
     digest_blocks = [
@@ -180,6 +209,9 @@ def synthesize_final_report(
     )
 
     use_deep = job.depth in {ResearchDepth.DEEP, ResearchDepth.EXHAUSTIVE}
+    if on_action is not None:
+        on_action("✍️ Formuliere Executive Summary, Kernaussagen & Gesamtfazit...")
+
     try:
         overview = gateway.generate_structured(
             prompt=prompt,
@@ -194,9 +226,11 @@ def synthesize_final_report(
         raise
     except ResearchBotError as exc:
         logger.warning("Synthese-Aufruf fehlgeschlagen (%s) – erstelle Fallback-Zusammenfassung.", exc)
+        if on_action is not None:
+            on_action("📋 Erstelle Direkt-Zusammenfassung aus erhobenen Teilbefunden...")
         overview = _build_fallback_overview(job, plan, findings)
 
-    full_markdown = _assemble_report_markdown(overview, findings, citations, job.language)
+    full_markdown = _assemble_report_markdown(overview, plan, findings, citations, job.language)
     return ResearchReport(
         job_id=job.id,
         title=overview.report_title.strip() or plan.normalized_title,

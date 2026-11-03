@@ -1,9 +1,10 @@
-"""Orchestrator: Steuert Recherche-Läufe inkl. Checkpointing, Auto-Resume, Heartbeat & Abbruch."""
+"""Orchestrator: Steuert Recherche-Läufe inkl. Live-Aktionsanzeige, Zeitbudget & Teilergebnis."""
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -12,13 +13,15 @@ from src.config.constants import (
     DEPTH_PROFILES,
     HEARTBEAT_INTERVAL_SECONDS,
     MAX_AUTO_JOB_RESUMES,
+    QUICK_MAX_TOTAL_SECONDS,
+    QUICK_RESUME_COOLDOWN_SECONDS,
 )
 from src.config.settings import AppSettings
-from src.domain.enums import JobPhase
+from src.domain.enums import JobPhase, ResearchDepth
 from src.domain.exceptions import JobCancelledError, ResearchBotError
 from src.domain.models import DepthProfile, ResearchJob, ResearchPlan, ResearchReport
 from src.research.gemini_client import ResearchLLMGateway
-from src.research.llm_helpers import sleep_with_cancel_check
+from src.research.llm_helpers import is_quota_error, sleep_with_cancel_check
 from src.research.planner import create_research_plan
 from src.research.subtopic_runner import execute_subtopics_batch
 from src.research.synthesizer import synthesize_final_report
@@ -47,7 +50,7 @@ def _calculate_elapsed_seconds(started_at_iso: str | None) -> int:
 
 
 class ResearchOrchestrator:
-    """Führt Recherche-Aufträge absturzsicher, selbstheilend und wiederaufnehmbar aus."""
+    """Führt Recherche-Aufträge absturzsicher, zeitbudgetiert und teilergebnisfähig aus."""
 
     def __init__(
         self,
@@ -66,7 +69,7 @@ class ResearchOrchestrator:
         self._cancel_event = external_cancel_event
 
     def execute_job(self, job_id: str, worker_id: str = "worker") -> ResearchReport | None:
-        """Beansprucht und verarbeitet einen Auftrag inkl. automatischer Selbstheilung ab Checkpoint."""
+        """Beansprucht und verarbeitet einen Auftrag inkl. Live-Status & Selbstheilung."""
         claimed = self._repo.claim_job(
             job_id=job_id,
             worker_id=worker_id,
@@ -101,13 +104,26 @@ class ResearchOrchestrator:
                 logger.debug("Heartbeat-Tick für '%s' übersprungen: %s", job_id, exc)
 
     def _execute_with_auto_resume(self, job_id: str) -> ResearchReport | None:
-        for resume_idx in range(MAX_AUTO_JOB_RESUMES + 1):
+        first_job = self._repo.get_job(job_id)
+        if first_job is None:
+            return None
+
+        is_quick = first_job.depth == ResearchDepth.QUICK
+        deadline = time.monotonic() + QUICK_MAX_TOTAL_SECONDS if is_quick else None
+        max_resumes = 1 if is_quick else MAX_AUTO_JOB_RESUMES
+
+        for resume_idx in range(max_resumes + 1):
             job = self._repo.get_job(job_id)
             if job is None:
                 return None
-            is_final_try = resume_idx >= MAX_AUTO_JOB_RESUMES
+            time_low = deadline is not None and (deadline - time.monotonic()) < 15.0
+            is_final_try = resume_idx >= max_resumes or time_low
             try:
-                report = self._run_pipeline(job, allow_partial_on_error=is_final_try)
+                report = self._run_pipeline(
+                    job,
+                    allow_partial_on_error=is_final_try,
+                    deadline_monotonic=deadline,
+                )
                 self._send_notification_if_configured(job.id, report)
                 return report
             except JobCancelledError:
@@ -118,10 +134,10 @@ class ResearchOrchestrator:
                 if self._is_cancelled_fast(job_id):
                     self._repo.mark_job_cancelled(job_id)
                     return None
-                if not is_final_try:
-                    self._schedule_in_worker_resume(job_id, resume_idx + 1, exc)
+                if not is_final_try and not is_quota_error(exc):
+                    self._schedule_in_worker_resume(job, resume_idx + 1, max_resumes, exc)
                     continue
-                logger.error("Fachlicher Fehler in Job '%s' nach Auto-Resumes: %s", job_id, exc)
+                logger.error("Fachlicher Fehler in Job '%s': %s", job_id, exc)
                 self._repo.mark_job_failed(job_id, str(exc))
                 return None
             except Exception as exc:
@@ -136,27 +152,27 @@ class ResearchOrchestrator:
                 return None
         return None
 
-    def _schedule_in_worker_resume(self, job_id: str, attempt_no: int, exc: Exception) -> None:
-        wait_sec = AUTO_RESUME_COOLDOWN_SECONDS * attempt_no
-        current_pct = (self._repo.get_job(job_id) or ResearchJob(id=job_id, topic="...")).progress_percent
-        logger.warning(
-            "Job '%s' stieß auf temporäre Störung (%s) – automatischer Wiederanlauf %d/%d in %.1fs...",
-            job_id,
-            exc,
-            attempt_no,
-            MAX_AUTO_JOB_RESUMES,
-            wait_sec,
+    def _schedule_in_worker_resume(
+        self,
+        job: ResearchJob,
+        attempt_no: int,
+        max_resumes: int,
+        exc: Exception,
+    ) -> None:
+        wait_sec = (
+            QUICK_RESUME_COOLDOWN_SECONDS
+            if job.depth == ResearchDepth.QUICK
+            else AUTO_RESUME_COOLDOWN_SECONDS * attempt_no
         )
+        logger.warning("Job '%s' temporäre Störung (%s) – Auto-Resume %d/%d...", job.id, exc, attempt_no, max_resumes)
         self._repo.update_progress(
-            job_id=job_id,
+            job_id=job.id,
             phase=JobPhase.INVESTIGATING,
-            progress_percent=max(10, current_pct),
-            message=(
-                f"Vorübergehende API-Auslastung erkannt – setze automatisch vom letzten "
-                f"Checkpoint fort (Versuch {attempt_no}/{MAX_AUTO_JOB_RESUMES})..."
-            ),
+            progress_percent=max(10, job.progress_percent),
+            message=f"Temporäre API-Spitze – setze ab Checkpoint fort ({attempt_no}/{max_resumes})...",
+            live_status_override="🔄 Starte sofortigen Wiederanlauf für offene Teilgebiete...",
         )
-        sleep_with_cancel_check(wait_sec, lambda: self._check_alive(job_id))
+        sleep_with_cancel_check(wait_sec, lambda: self._check_alive(job.id))
 
     def _is_cancelled_fast(self, job_id: str) -> bool:
         if self._cancel_event is not None and self._cancel_event.is_set():
@@ -168,24 +184,37 @@ class ResearchOrchestrator:
             raise JobCancelledError(f"Abbruch für Job '{job_id}' angefordert.")
         self._repo.touch_heartbeat(job_id)
 
-    def _bind_gateway(self, job: ResearchJob) -> ResearchLLMGateway:
+    def _bind_gateway(
+        self,
+        job: ResearchJob,
+        deadline_monotonic: float | None,
+    ) -> ResearchLLMGateway:
         job_model = getattr(job, "model", None) or self._settings.gemini_fast_model
         if hasattr(self._llm, "with_preferred_model"):
             try:
                 return self._llm.with_preferred_model(
                     job_model,
                     cancel_check=lambda: self._check_alive(job.id),
+                    on_action=lambda msg: self._repo.update_live_action(job.id, msg),
+                    fast_mode=(job.depth == ResearchDepth.QUICK),
+                    deadline_monotonic=deadline_monotonic,
+                    language=job.language,
                 )
             except TypeError:
                 return self._llm.with_preferred_model(job_model)
         return self._llm
 
-    def _run_pipeline(self, job: ResearchJob, allow_partial_on_error: bool = False) -> ResearchReport:
+    def _run_pipeline(
+        self,
+        job: ResearchJob,
+        allow_partial_on_error: bool = False,
+        deadline_monotonic: float | None = None,
+    ) -> ResearchReport:
         profile = DEPTH_PROFILES[job.depth]
         checkpoint = self._repo.load_checkpoint(job.id)
         self._check_alive(job.id)
 
-        llm = self._bind_gateway(job)
+        llm = self._bind_gateway(job, deadline_monotonic)
         plan = checkpoint.plan or self._run_planning_step(job, profile, llm)
         baseline_md = checkpoint.baseline_markdown or self._run_baseline_step(job, profile, llm)
         findings = execute_subtopics_batch(
@@ -199,14 +228,22 @@ class ResearchOrchestrator:
             baseline_markdown=baseline_md,
             check_alive=lambda: self._check_alive(job.id),
             allow_partial_on_error=allow_partial_on_error,
+            deadline_monotonic=deadline_monotonic,
         )
 
         self._check_alive(job.id)
+        is_partial = len(findings) < len(plan.subtopics)
+        synth_log = (
+            f"Erstelle Teilergebnis-Bericht ({len(findings)}/{len(plan.subtopics)} Teilgebiete ausgewertet)..."
+            if is_partial
+            else "Synthetisiere Gesamtbericht, Executive Summary und Quellenverzeichnis..."
+        )
         self._repo.update_progress(
             job_id=job.id,
             phase=JobPhase.SYNTHESIZING,
             progress_percent=88,
-            message="Synthetisiere Gesamtbericht, Executive Summary und Quellenverzeichnis...",
+            message=synth_log,
+            live_status_override="✍️ Formuliere Executive Summary, Kernaussagen & Quellenverzeichnis...",
         )
 
         refreshed_job = self._repo.get_job(job.id) or job
@@ -224,9 +261,15 @@ class ResearchOrchestrator:
             baseline_markdown=baseline_md,
             model_used=model_label,
             duration_seconds=_calculate_elapsed_seconds(refreshed_job.started_at),
+            on_action=lambda msg: self._repo.update_live_action(job.id, msg),
         )
         self._check_alive(job.id)
-        self._repo.mark_job_completed(job.id, report)
+        completion_note = (
+            f"Mit Teilergebnis abgeschlossen ({len(findings)}/{len(plan.subtopics)} Teilgebiete)."
+            if is_partial
+            else None
+        )
+        self._repo.mark_job_completed(job.id, report, status_note=completion_note)
         return report
 
     def _run_planning_step(
@@ -240,6 +283,7 @@ class ResearchOrchestrator:
             phase=JobPhase.PLANNING,
             progress_percent=8,
             message=f"Erstelle Recherche-Plan ({profile.subtopic_count} Teilgebiete)...",
+            live_status_override=f"🧠 Entwerfe Suchstrategie & {profile.subtopic_count} Leitfragen...",
         )
         plan = create_research_plan(gateway, job, profile)
         self._check_alive(job.id)
@@ -259,6 +303,7 @@ class ResearchOrchestrator:
             phase=JobPhase.DEEP_BASELINE,
             progress_percent=15,
             message=f"Führe autonome Deep-Research-Voranalyse ({profile.deep_agent_name}) aus...",
+            live_status_override=f"🔬 Deep-Research-Agent ({profile.deep_agent_name}) recherchiert im Hintergrund...",
         )
         baseline = gateway.run_deep_research_agent(
             prompt=f"Recherchiere umfassend zum Thema: {job.topic}\n{job.focus_instructions}",

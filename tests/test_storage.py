@@ -35,11 +35,11 @@ class TestSqlResearchRepository:
             depth=ResearchDepth.DEEP,
             language="de",
             notify_email="analyst@beispiel.de",
-            model="gemini-3.6-flash",
+            model="gemini-3.5-flash-lite",
         )
         job = repo.create_job(req)
         assert job.status == JobStatus.QUEUED
-        assert job.model == "gemini-3.6-flash"
+        assert job.model == "gemini-3.5-flash-lite"
 
         # Erster Worker beansprucht den Job erfolgreich; zweiter Worker wird atomar abgewiesen
         assert repo.claim_job(job.id, worker_id="worker-1") is True
@@ -91,7 +91,7 @@ class TestSqlResearchRepository:
             key_takeaways=["Punkt 1", "Punkt 2"],
             content_markdown="# Dossier\n\nInhalt mit Elektrolyse-Details.",
             citations=[SourceCitation(url="https://example.com/h2", title="H2 Studie")],
-            model_used="gemini-4-argon",
+            model_used="gemini-3.5-flash-lite",
             duration_seconds=3720,
             created_at=datetime.now(UTC).isoformat(),
         )

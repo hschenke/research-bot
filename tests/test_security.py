@@ -125,11 +125,11 @@ class TestSanitizationAndValidation:
             depth=ResearchDepth.DEEP,
             language="de",
             notify_email="test@firma.de",
-            model="gemini-3.6-flash",
+            model="gemini-3.5-flash-lite",
         )
         assert req.topic == "Quantencomputing Fortschritte 2026"
         assert req.depth == ResearchDepth.DEEP
-        assert req.model == "gemini-3.6-flash"
+        assert req.model == "gemini-3.5-flash-lite"
 
         with pytest.raises(InputValidationError):
             validate_research_request(

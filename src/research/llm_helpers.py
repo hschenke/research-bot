@@ -15,9 +15,6 @@ from google import genai
 from src.config.constants import (
     CANCEL_POLL_SLICE_SECONDS,
     DEFAULT_MODEL,
-    DEPRECATED_EXACT_MODELS,
-    DEPRECATED_MODEL_PREFIXES,
-    FALLBACK_AVAILABLE_MODELS,
     GROUNDING_QUOTA_COOLDOWN_SECONDS,
     LLM_DEFAULT_TIMEOUT_SECONDS,
     RETRY_BACKOFF_BASE_SECONDS,
@@ -27,23 +24,6 @@ from src.domain.models import SourceCitation
 from src.security.sanitization import sanitize_display_url
 
 logger = logging.getLogger(__name__)
-
-_EXCLUDED_MODEL_KEYWORDS: tuple[str, ...] = (
-    "tts",
-    "image",
-    "banana",
-    "lyria",
-    "robotics",
-    "computer-use",
-    "embedding",
-    "transcribe",
-    "live",
-    "gemma",
-    "customtools",
-    "aqa",
-    "audio",
-    "native",
-)
 
 _TRANSIENT_ERROR_KEYWORDS: tuple[str, ...] = (
     "503",
@@ -112,58 +92,27 @@ def create_fast_genai_client(api_key: str) -> genai.Client:
 
 
 def is_supported_generative_model(model_name: str) -> bool:
-    """Prüft, ob ein Modell ein aktuelles, nicht-abgekündigtes Gemini-Textmodell ist."""
+    """Prüft, ob ein Modell das freigegebene Standard-Modell ist."""
     cleaned = model_name.strip().lower()
-    if not cleaned.startswith("gemini-"):
-        return False
-    if cleaned.startswith(DEPRECATED_MODEL_PREFIXES) or cleaned in DEPRECATED_EXACT_MODELS:
-        return False
-    return not any(keyword in cleaned for keyword in _EXCLUDED_MODEL_KEYWORDS)
+    return cleaned == DEFAULT_MODEL
 
 
 def normalize_preferred_model(model_name: str) -> str:
-    """Ersetzt veraltete oder leere Modellnamen defensiv durch `DEFAULT_MODEL`."""
-    cleaned = (model_name or "").strip()
-    if not cleaned:
-        return DEFAULT_MODEL
-    low = cleaned.lower()
-    if low.startswith(DEPRECATED_MODEL_PREFIXES) or low in DEPRECATED_EXACT_MODELS:
-        return DEFAULT_MODEL
-    return cleaned
+    """Ersetzt veraltete oder abweichende Modellnamen strikt durch `DEFAULT_MODEL`."""
+    _ = model_name
+    return DEFAULT_MODEL
 
 
 def build_model_chain(preferred: str, defaults: tuple[str, ...]) -> list[str]:
-    """Baut eine deduplizierte Fallback-Kette aus aktiven Gemini-Modellen auf."""
-    chain: list[str] = []
-    primary = normalize_preferred_model(preferred)
-    if primary:
-        chain.append(primary)
-    for candidate in defaults:
-        if candidate not in chain and is_supported_generative_model(candidate):
-            chain.append(candidate)
-    return chain
+    """Liefert die Modellkette, strikt fokussiert auf `DEFAULT_MODEL`."""
+    _ = (preferred, defaults)
+    return [DEFAULT_MODEL]
 
 
-def fetch_available_gemini_models(api_key: str) -> list[str]:
-    """Fragt verfügbare Textmodelle über das SDK ab und setzt `DEFAULT_MODEL` an Position 1."""
-    clean_key = (api_key or "").strip()
-    if not clean_key or clean_key.startswith("your_"):
-        return list(FALLBACK_AVAILABLE_MODELS)
-
-    try:
-        client = create_fast_genai_client(clean_key)
-        raw_names = [m.name.replace("models/", "") for m in client.models.list()]
-        filtered = [m for m in raw_names if is_supported_generative_model(m)]
-        if DEFAULT_MODEL in filtered:
-            filtered.remove(DEFAULT_MODEL)
-        filtered.insert(0, DEFAULT_MODEL)
-        return filtered if filtered else list(FALLBACK_AVAILABLE_MODELS)
-    except Exception as exc:
-        logger.warning(
-            "Konnte Gemini-Modellliste nicht dynamisch abrufen (%s) – nutze Standardliste.",
-            exc,
-        )
-        return list(FALLBACK_AVAILABLE_MODELS)
+def fetch_available_gemini_models(api_key: str = "") -> list[str]:
+    """Gibt ausschließlich das freigegebene Standard-Modell (`DEFAULT_MODEL`) zurück."""
+    _ = api_key
+    return [DEFAULT_MODEL]
 
 
 def strip_json_code_fences(raw_text: str) -> str:

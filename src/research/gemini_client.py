@@ -305,13 +305,18 @@ class GeminiInteractionsGateway:
                         if quota_hits >= 2:
                             self._quota_state.mark_grounding_exhausted()
                         return None, last_exc
-                    if same_idx < LLM_PER_MODEL_RETRIES and is_transient_llm_error(exc) and not hit_quota:
+                    has_more_models = len(models) > 1 and model_name != models[-1]
+                    if same_idx < LLM_PER_MODEL_RETRIES and (
+                        is_transient_llm_error(exc) or (hit_quota and not has_more_models)
+                    ):
                         sleep_with_cancel_check(compute_backoff_seconds(same_idx), self._cancel_check)
                         continue
-                    self._emit_action(
-                        f"⚡ {'API-Limit (429)' if hit_quota else 'Fehler'} bei {model_name} – wechsle Modell ({errors}/{MAX_STEP_ERROR_ATTEMPTS})..."
-                    )
-                    break
+                    if has_more_models:
+                        self._emit_action(
+                            f"⚡ {'API-Limit (429)' if hit_quota else 'Fehler'} bei {model_name} – wechsle Modell ({errors}/{MAX_STEP_ERROR_ATTEMPTS})..."
+                        )
+                        break
+                    sleep_with_cancel_check(compute_backoff_seconds(same_idx), self._cancel_check)
             sleep_with_cancel_check(MODEL_SWITCH_PAUSE_SECONDS, self._cancel_check)
 
         if quota_hits >= 2:
@@ -337,7 +342,8 @@ class GeminiInteractionsGateway:
         last_exc = prior_exc
         max_untooled = 2 if prior_exc is not None else MAX_STEP_ERROR_ATTEMPTS
 
-        for idx, model_name in enumerate(models[:max_untooled]):
+        for idx in range(max_untooled):
+            model_name = models[idx % len(models)]
             self._check_cancelled()
             try:
                 timeout_sec = self._timeout_for(prefer_deep)

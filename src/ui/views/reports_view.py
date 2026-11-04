@@ -7,7 +7,7 @@ from typing import Any
 
 import streamlit as st
 
-from src.config.constants import DEPTH_PROFILES
+from src.config.constants import DEFAULT_MODEL, DEPTH_PROFILES
 from src.config.settings import AppSettings
 from src.domain.enums import AuthRole
 from src.domain.models import ResearchReport
@@ -17,7 +17,9 @@ from src.notifications.email_renderer import (
     render_report_email_html,
 )
 from src.notifications.notifier import EmailNotifier
+from src.research.llm_helpers import normalize_preferred_model
 from src.storage.base_repository import ResearchRepository
+from src.ui.date_formatter import format_datetime_german
 
 
 def render_reports_view(
@@ -45,7 +47,7 @@ def render_reports_view(
         options=reports,
         index=default_index,
         format_func=lambda r: (
-            f"{r.title}  ·  [{r.created_at[:10]} | {DEPTH_PROFILES[r.depth].label}]"
+            f"{r.title}  ·  [{format_datetime_german(r.created_at)} | {DEPTH_PROFILES[r.depth].label}]"
         ),
     )
 
@@ -81,9 +83,9 @@ def _render_single_report(
     _render_kpi_card(col_m1, "Tiefe", DEPTH_PROFILES[report.depth].label)
     _render_kpi_card(col_m2, "Laufzeit", format_duration_human(report.duration_seconds))
     _render_kpi_card(col_m3, "Verifizierte Quellen", str(len(report.citations)))
-    _render_kpi_card(col_m4, "Erstellt (UTC)", report.created_at[:10])
-    if report.model_used:
-        st.caption(f"🤖 Erstellt mit Modell: `{report.model_used}`")
+    _render_kpi_card(col_m4, "Erstellt", format_datetime_german(report.created_at))
+    safe_model = normalize_preferred_model(report.model_used or DEFAULT_MODEL)
+    st.caption(f"🤖 Erstellt mit Modell: `{safe_model}`")
 
     app_url = build_report_app_url(
         base_url=settings.streamlit_app_url,

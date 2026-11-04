@@ -30,6 +30,15 @@ def render_new_research_view(
     role: AuthRole,
 ) -> None:
     """Rendert das schlanke Eingabeformular zum Anlegen und Starten eines Auftrags."""
+    if st.session_state.pop("_new_job_started", False):
+        col_alert, col_btn = st.columns([3, 1], vertical_alignment="center")
+        with col_alert:
+            st.success("Auftrag gestartet! [👉 Zum laufenden Job](?tab=jobs)")
+        with col_btn:
+            if st.button("👉 Zum laufenden Job", type="primary", use_container_width=True, key="btn_jump_to_jobs"):
+                st.session_state["_force_nav_tab"] = "jobs"
+                st.rerun()
+
     flash_msg = st.session_state.pop("_new_job_flash", None)
     if flash_msg:
         st.success(str(flash_msg))
@@ -142,12 +151,8 @@ def _handle_job_submission(
         )
         job = repository.create_job(validated)
         dispatcher = JobDispatcher(settings)
-        worker_label = dispatcher.dispatch(job.id, depth=validated.depth)
-        effective_model = getattr(job, "model", None) or model or DEFAULT_MODEL
-        st.session_state["_new_job_flash"] = (
-            f"✅ Auftrag **`{job.id}`** wurde mit Modell **`{effective_model}`** gestartet ({worker_label})! "
-            "Den Live-Fortschritt findest du im Tab **⏳ Laufende Jobs**."
-        )
+        dispatcher.dispatch(job.id, depth=validated.depth)
+        st.session_state["_new_job_started"] = True
         st.rerun()
     except InputValidationError as exc:
         st.error(f"Eingabefehler: {exc}")

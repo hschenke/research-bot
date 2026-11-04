@@ -7,38 +7,12 @@ from src.domain.models import DepthProfile
 DEFAULT_MODEL: str = "gemini-3.5-flash-lite"
 DEFAULT_FAST_MODEL: str = DEFAULT_MODEL
 DEFAULT_DEEP_MODEL: str = DEFAULT_MODEL
-FALLBACK_LITE_MODEL: str = "gemini-3.5-flash-lite"
+FALLBACK_LITE_MODEL: str = DEFAULT_MODEL
 
-DEPRECATED_MODEL_PREFIXES: tuple[str, ...] = ("gemini-1.", "gemini-2.")
-DEPRECATED_EXACT_MODELS: frozenset[str] = frozenset(
-    {
-        "gemini-3.5-flash",
-        "gemini-3.7-flash",
-    }
-)
+FALLBACK_AVAILABLE_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
 
-FALLBACK_AVAILABLE_MODELS: tuple[str, ...] = (
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-4-argon",
-)
-
-CANDIDATE_FAST_MODELS: tuple[str, ...] = (
-    DEFAULT_MODEL,
-    "gemini-3.1-flash-lite",
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-4-argon",
-)
-CANDIDATE_DEEP_MODELS: tuple[str, ...] = (
-    DEFAULT_MODEL,
-    "gemini-3.8-flash",
-    "gemini-3.6-flash",
-    "gemini-4-argon",
-    "gemini-3.1-flash-lite",
-)
+CANDIDATE_FAST_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
+CANDIDATE_DEEP_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
 
 DEEP_RESEARCH_AGENT_FAST: str = "deep-research-preview-04-2026"
 DEEP_RESEARCH_AGENT_MAX: str = "deep-research-max-preview-04-2026"

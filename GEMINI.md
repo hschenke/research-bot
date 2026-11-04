@@ -6,7 +6,7 @@
 ## Automatischer Abschluss-Ablauf
 - **Qualitätscheck vor jedem Commit**: Führe vor jedem Commit `ruff check .` und `pytest` in `.venv` aus.
 - **Automatisches Committen & `git push`**: Committe abgeschlossene Features/Fixes sauber und pushe sie direkt nach `origin main`, damit GitHub Actions und Streamlit Community Cloud aktuell sind.
-- **Proaktive Versions-Tag Empfehlung (Semantic Versioning)**: Schlage bei neuen Meilensteinen proaktiv einen passenden SemVer-Tag (`v0.X.0` für Features, `v0.X.Y` für Fixes) vor.
+- **Automatisches Tagging & Push (Semantic Versioning)**: Erhöhe bei neuen Meilensteinen die Version in `src/__version__.py`, erstelle selbständig den passenden SemVer-Tag (`v0.X.0` für Features, `v0.X.Y` für Fixes) und pushe sowohl Commit als auch Tag direkt nach `origin`.
 
 ## Architektur & Clean Code Standards (Strikte Pflicht)
 - **Frühzeitige Modularisierung**: Dateien kompakt halten (Ziel: < 200 Zeilen pro Modul), Funktionen klein halten (Ziel: max. 20–30 Zeilen, SRP, Guard Clauses statt tiefer Verschachtelung).

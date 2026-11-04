@@ -1,4 +1,4 @@
-"""Tab 1: Formular zum Starten neuer Web-Recherchen (inkl. Turbo-Schnellüberblick & >1h Cloud-Modus)."""
+"""Tab 1: Formular zum Starten neuer Web-Recherchen."""
 
 from __future__ import annotations
 
@@ -11,27 +11,17 @@ from src.domain.exceptions import DispatchError, InputValidationError, ResearchB
 from src.research.gemini_client import fetch_available_gemini_models
 from src.security.sanitization import validate_research_request
 from src.storage.base_repository import ResearchRepository
-from src.worker.dispatcher import JobDispatcher, resolve_effective_worker_mode
+from src.worker.dispatcher import JobDispatcher
+
+# Aktuell auf gemini-3.5-flash-lite fokussiert; modular erweiterbar für zukünftige Modelle
+SUPPORTED_UI_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _get_available_gemini_models(api_key: str) -> list[str]:
-    """Fragt die verfügbaren Modelle ab und cacht das Ergebnis für 1 Stunde."""
-    return fetch_available_gemini_models(api_key)
-
-
-def _format_profile_scope_caption(depth: ResearchDepth) -> str:
-    profile = DEPTH_PROFILES[depth]
-    if profile.max_urls_per_subtopic <= 0:
-        return (
-            f"Geplanter Umfang: **{profile.subtopic_count} parallele Teilgebiete** mit direktem "
-            "Live-Web-Grounding (Turbo-Modus ohne Scraper-Wartezeit)."
-        )
-    return (
-        f"Geplanter Umfang: **{profile.subtopic_count} Teilgebiete**, "
-        f"bis zu **{profile.max_urls_per_subtopic} Volltext-Seiten pro Teilgebiet**, "
-        f"**{profile.followup_rounds}** Nachschärfungsrunde(n)."
-    )
+def _get_available_gemini_models(api_key: str = "") -> list[str]:
+    """Gibt die aktuell freigegebenen KI-Modelle für das UI-Formular zurück."""
+    _ = (api_key, fetch_available_gemini_models)
+    return list(SUPPORTED_UI_MODELS)
 
 
 def render_new_research_view(
@@ -39,7 +29,7 @@ def render_new_research_view(
     repository: ResearchRepository,
     role: AuthRole,
 ) -> None:
-    """Rendert das Eingabeformular zum Anlegen und sofortigen Hintergrund-Start eines Auftrags."""
+    """Rendert das schlanke Eingabeformular zum Anlegen und Starten eines Auftrags."""
     flash_msg = st.session_state.pop("_new_job_flash", None)
     if flash_msg:
         st.success(str(flash_msg))
@@ -56,14 +46,6 @@ def render_new_research_view(
             "⚠️ Noch kein gültiger `GEMINI_API_KEY` konfiguriert. "
             "Hinterlege den Key in `.env` bzw. den Streamlit Secrets, bevor du einen Auftrag startest."
         )
-
-    effective_worker = resolve_effective_worker_mode(settings)
-    worker_badge = (
-        "☁️ GitHub Actions Cloud-Worker aktiv (Schnellüberblick startet sofort im Turbo-Modus; lange Läufe bis 5 Std. in der Cloud)"
-        if effective_worker.value == "github"
-        else "💻 Lokaler Hintergrund-Worker aktiv (läuft asynchron im Server-Prozess)"
-    )
-    st.caption(worker_badge)
 
     depth_options = list(ResearchDepth)
     default_idx = depth_options.index(settings.default_depth)
@@ -84,13 +66,10 @@ def render_new_research_view(
         col_model, col_depth = st.columns([1, 1])
         with col_model:
             model_options = _get_available_gemini_models(settings.gemini_api_key)
-            default_m_idx = (
-                model_options.index(DEFAULT_MODEL) if DEFAULT_MODEL in model_options else 0
-            )
             selected_model = st.selectbox(
                 "🧠 KI-Modell",
                 options=model_options,
-                index=default_m_idx,
+                index=0,
                 help="Wähle das Gemini-Modell für Recherche & Synthese. Standard: gemini-3.5-flash-lite.",
             )
         with col_depth:
@@ -101,6 +80,7 @@ def render_new_research_view(
                 format_func=lambda d: (
                     f"{DEPTH_PROFILES[d].label} ({DEPTH_PROFILES[d].estimated_duration_label})"
                 ),
+                help="Wähle das passende Recherche-Profil vom schnellen Turbo-Überblick (< 1 Min.) bis zur intensiven Tiefenrecherche.",
             )
 
         col_lang, col_mail = st.columns([1, 2])
@@ -109,7 +89,7 @@ def render_new_research_view(
                 "Berichtssprache",
                 options=["de", "en"],
                 index=0 if settings.default_language == "de" else 1,
-                format_func=lambda code: "🇩🇪 Deutsch" if code == "de" else "🇬🇧 English",
+                format_func=lambda code: "Deutsch" if code == "de" else "English",
             )
         with col_mail:
             notify_email = st.text_input(
@@ -118,8 +98,6 @@ def render_new_research_view(
                 placeholder="name@beispiel.de",
                 help="Sobald das Ergebnis vorliegt, wird der aufbereitete Bericht automatisch an diese Adresse gesendet.",
             )
-
-        st.caption(_format_profile_scope_caption(selected_depth))
 
         submitted = st.form_submit_button(
             "🚀 Recherche im Hintergrund starten",

@@ -13,33 +13,35 @@ _STATIC_APP_CSS = """
       font-size: 1.45rem;
       font-weight: 700;
   }
-  /* Zustandsstabile horizontale Tab-Navigation via st.radio */
-  div[data-testid="stRadio"] > div[role="radiogroup"] {
+
+  /* Sofortige Reaktionszeit: Keine künstliche Ausblendung/Fade bei Script-Reruns */
+  [data-stale="true"],
+  .element-container[data-stale="true"],
+  div[data-testid="stAppViewContainer"] [data-stale="true"] {
+      opacity: 1 !important;
+      transition: none !important;
+  }
+
+  /* Moderne, elegante Tab-Navigation */
+  div[data-baseweb="tab-list"] {
       gap: 0.35rem;
       border-bottom: 1px solid rgba(128, 128, 128, 0.25);
-      padding-bottom: 0;
-      margin-bottom: 0.6rem;
-      flex-wrap: wrap;
+      margin-bottom: 0.8rem;
   }
-  div[data-testid="stRadio"] > div[role="radiogroup"] > label {
-      background: transparent !important;
-      padding: 0.45rem 0.9rem 0.6rem 0.9rem !important;
-      margin-right: 0 !important;
-      border-radius: 0.35rem 0.35rem 0 0 !important;
-      border-bottom: 2px solid transparent;
-      cursor: pointer;
-      transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  button[data-baseweb="tab"] {
+      font-size: 0.95rem;
+      font-weight: 500;
+      padding: 0.45rem 0.9rem 0.6rem 0.9rem;
+      border-radius: 0.35rem 0.35rem 0 0;
+      transition: background-color 0.12s ease;
   }
-  div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
-      background: rgba(128, 128, 128, 0.08) !important;
+  button[data-baseweb="tab"]:hover {
+      background: rgba(128, 128, 128, 0.08);
   }
-  div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child {
-      display: none !important;
-  }
-  div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
-      border-bottom: 2.5px solid #ff4b4b;
+  button[data-baseweb="tab"][aria-selected="true"] {
       font-weight: 600;
   }
+
   @media (max-width: 640px) {
       .block-container {
           padding-top: 1rem;

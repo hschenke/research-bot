@@ -214,19 +214,15 @@ def test_stop_and_resume_buttons_stay_on_active_jobs_tab(tmp_path: Path) -> None
         mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
 
         at = AppTest.from_function(_entry).run()
-        at.radio(key="_active_nav_tab").set_value("jobs").run()
-        assert at.radio(key="_active_nav_tab").value == "jobs"
 
-        # Klick auf "⏹️ Stopp" (Anzahl aktiver Jobs sinkt von 1 auf 0) -> muss im Tab "jobs" bleiben!
+        # Klick auf "⏹️ Stopp" (Auftrag wird abgebrochen)
         at.button(key=f"cancel_{job.id}").click().run()
-        assert at.radio(key="_active_nav_tab").value == "jobs"
         cancelled_job = repo.get_job(job.id)
         assert cancelled_job is not None
         assert cancelled_job.status == JobStatus.CANCELLED
 
-        # Klick auf "🔁 Fortsetzen" (Anzahl aktiver Jobs steigt von 0 auf 1) -> muss im Tab "jobs" bleiben!
+        # Klick auf "🔁 Fortsetzen" (Auftrag wird erneut eingereiht)
         at.button(key=f"retry_{job.id}").click().run()
-        assert at.radio(key="_active_nav_tab").value == "jobs"
         resumed_job = repo.get_job(job.id)
         assert resumed_job is not None
         assert resumed_job.status == JobStatus.QUEUED

@@ -10,12 +10,19 @@ from src.storage.base_repository import ResearchRepository
 from src.storage.factory import create_repository
 from src.ui.auth_view import determine_session_role, render_login_gate_or_sidebar
 from src.ui.styles import inject_static_styles
-from src.ui.views.active_jobs_view import ACTIVE_JOB_STATUSES, render_active_jobs_view
+from src.ui.views.active_jobs_view import render_active_jobs_view
 from src.ui.views.new_research_view import render_new_research_view
 from src.ui.views.reports_view import render_reports_view
 from src.ui.views.settings_view import render_settings_view
 
 NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "settings")
+NAV_TAB_TITLES: tuple[str, ...] = (
+    "🚀 Neue Recherche",
+    "⏳ Laufende Jobs",
+    "📚 Ergebnisse & Archiv",
+    "⚙️ Systemstatus",
+)
+NAV_KEY_TO_TITLE: dict[str, str] = dict(zip(NAV_TAB_KEYS, NAV_TAB_TITLES, strict=True))
 
 
 @st.cache_resource
@@ -26,8 +33,21 @@ def _get_cached_repository(turso_url: str, sqlite_path: str) -> ResearchReposito
     return create_repository(settings, initialize=True)
 
 
+def _resolve_default_tab_title() -> str:
+    """Ermittelt den initial oder programmatisch ausgewählten Navigations-Tab."""
+    forced_tab = st.session_state.pop("_force_nav_tab", None)
+    if forced_tab in NAV_KEY_TO_TITLE:
+        return NAV_KEY_TO_TITLE[forced_tab]
+
+    requested_tab = str(st.query_params.get("tab", "") or "").lower()
+    if requested_tab in NAV_KEY_TO_TITLE:
+        return NAV_KEY_TO_TITLE[requested_tab]
+
+    return NAV_TAB_TITLES[0]
+
+
 def run_streamlit_app() -> None:
-    """Initialisiert Seitenlayout, Authentifizierung und zustandsstabile Tab-Navigation."""
+    """Initialisiert Seitenlayout, Authentifizierung und sofort reagierende Tab-Navigation."""
     st.set_page_config(
         page_title="Research-Bot",
         page_icon="🔬",
@@ -51,40 +71,17 @@ def run_streamlit_app() -> None:
         "mit automatischer Selbstheilung & E-Mail-Benachrichtigung bei Fertigstellung."
     )
 
-    running_count = repository.count_jobs(statuses=ACTIVE_JOB_STATUSES)
-    st.session_state["_tab_active_count"] = running_count
-
-    forced_tab = st.session_state.pop("_force_nav_tab", None)
-    if forced_tab in NAV_TAB_KEYS:
-        st.session_state["_active_nav_tab"] = forced_tab
-
-    requested_tab = str(st.query_params.get("tab", "") or "").lower()
-    if "_active_nav_tab" not in st.session_state or st.session_state["_active_nav_tab"] not in NAV_TAB_KEYS:
-        st.session_state["_active_nav_tab"] = (
-            requested_tab if requested_tab in NAV_TAB_KEYS else "new"
-        )
-
-    nav_labels: dict[str, str] = {
-        "new": "🚀 Neue Recherche",
-        "jobs": f"⏳ Laufende Jobs ({running_count})" if running_count > 0 else "⏳ Laufende Jobs",
-        "reports": "📚 Ergebnisse & Archiv",
-        "settings": "⚙️ Systemstatus",
-    }
-
-    active_tab = st.radio(
-        "Navigation",
-        options=NAV_TAB_KEYS,
-        format_func=lambda tab_key: nav_labels[tab_key],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="_active_nav_tab",
+    default_tab_title = _resolve_default_tab_title()
+    tab_new, tab_jobs, tab_reports, tab_settings = st.tabs(
+        list(NAV_TAB_TITLES),
+        default=default_tab_title,
     )
 
-    if active_tab == "new":
+    with tab_new:
         render_new_research_view(settings=settings, repository=repository, role=role)
-    elif active_tab == "jobs":
+    with tab_jobs:
         render_active_jobs_view(settings=settings, repository=repository, role=role)
-    elif active_tab == "reports":
+    with tab_reports:
         render_reports_view(settings=settings, repository=repository, role=role)
-    else:
+    with tab_settings:
         render_settings_view(settings=settings, repository=repository, role=role)

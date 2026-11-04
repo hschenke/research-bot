@@ -41,10 +41,6 @@ def _render_live_jobs_fragment(
     dispatcher.auto_recover_stale_jobs(repository)
 
     total_active_count = repository.count_jobs(statuses=ACTIVE_JOB_STATUSES)
-    rendered_tab_count = st.session_state.get("_tab_active_count")
-    if rendered_tab_count is not None and rendered_tab_count != total_active_count:
-        st.session_state["_force_nav_tab"] = "jobs"
-        st.rerun()
 
     col_head, col_btn = st.columns([4, 1], vertical_alignment="center")
     with col_head:

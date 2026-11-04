@@ -193,7 +193,7 @@ def synthesize_final_report(
     on_action: Callable[[str], None] | None = None,
 ) -> ResearchReport:
     """Erstellt aus allen Checkpoints den vollständigen oder teilweisen `ResearchReport`."""
-    lang_name = "Deutsch" if job.language == "de" else "English"
+    lang_name = "Deutsch" if job.language == "de" else "US English"
     citations = collect_unique_citations(findings)
     digest_blocks = [
         f"### {f.subtopic_index}. {f.title}\nKernfakten: {'; '.join(f.key_facts)}\n{f.analysis_markdown[:2500]}"

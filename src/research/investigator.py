@@ -88,7 +88,7 @@ def investigate_subtopic(
     on_action: Callable[[str], None] | None = None,
 ) -> SubTopicFinding:
     """Untersucht ein Teilthema über Web-Grounding, optionalen Volltext-Abruf und Follow-ups."""
-    lang_name = "Deutsch" if job.language == "de" else "English"
+    lang_name = "Deutsch" if job.language == "de" else "US English"
     if profile.max_urls_per_subtopic <= 0 and profile.followup_rounds <= 0:
         return _investigate_quick_single_pass(gateway, job, subtopic, lang_name, on_heartbeat)
 

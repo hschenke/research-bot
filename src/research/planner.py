@@ -28,7 +28,7 @@ class _DraftResearchPlan(BaseModel):
 
 
 def _language_label(lang_code: str) -> str:
-    return "Deutsch" if lang_code.lower() == "de" else "English"
+    return "Deutsch" if lang_code.lower() == "de" else "US English"
 
 
 def _build_deterministic_fallback_plan(job: ResearchJob, profile: DepthProfile) -> ResearchPlan:

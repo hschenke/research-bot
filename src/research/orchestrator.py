@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -13,7 +12,6 @@ from src.config.constants import (
     DEPTH_PROFILES,
     HEARTBEAT_INTERVAL_SECONDS,
     MAX_AUTO_JOB_RESUMES,
-    QUICK_MAX_TOTAL_SECONDS,
     QUICK_RESUME_COOLDOWN_SECONDS,
 )
 from src.config.settings import AppSettings
@@ -108,21 +106,18 @@ class ResearchOrchestrator:
         if first_job is None:
             return None
 
-        is_quick = first_job.depth == ResearchDepth.QUICK
-        deadline = time.monotonic() + QUICK_MAX_TOTAL_SECONDS if is_quick else None
-        max_resumes = 1 if is_quick else MAX_AUTO_JOB_RESUMES
+        max_resumes = MAX_AUTO_JOB_RESUMES
 
         for resume_idx in range(max_resumes + 1):
             job = self._repo.get_job(job_id)
             if job is None:
                 return None
-            time_low = deadline is not None and (deadline - time.monotonic()) < 15.0
-            is_final_try = resume_idx >= max_resumes or time_low
+            is_final_try = resume_idx >= max_resumes
             try:
                 report = self._run_pipeline(
                     job,
                     allow_partial_on_error=is_final_try,
-                    deadline_monotonic=deadline,
+                    deadline_monotonic=None,
                 )
                 self._send_notification_if_configured(job.id, report)
                 return report

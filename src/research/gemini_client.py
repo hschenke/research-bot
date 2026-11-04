@@ -18,7 +18,6 @@ from src.config.constants import (
     LLM_DEFAULT_TIMEOUT_SECONDS,
     LLM_FAST_TIMEOUT_SECONDS,
     LLM_PER_MODEL_RETRIES,
-    LLM_QUICK_TIMEOUT_SECONDS,
     MAX_STEP_ERROR_ATTEMPTS,
     MIN_LLM_TIMEOUT_SECONDS,
     MODEL_SWITCH_PAUSE_SECONDS,
@@ -174,11 +173,7 @@ class GeminiInteractionsGateway:
         return self._deep_chain if prefer_deep else self._fast_chain
 
     def _timeout_for(self, prefer_deep: bool) -> float:
-        base = (
-            LLM_QUICK_TIMEOUT_SECONDS
-            if self._fast_mode
-            else (LLM_DEFAULT_TIMEOUT_SECONDS if prefer_deep else LLM_FAST_TIMEOUT_SECONDS)
-        )
+        base = LLM_DEFAULT_TIMEOUT_SECONDS if prefer_deep else LLM_FAST_TIMEOUT_SECONDS
         if self._deadline_monotonic is not None:
             remaining = self._deadline_monotonic - time.monotonic()
             if remaining <= 0:
@@ -345,7 +340,7 @@ class GeminiInteractionsGateway:
         for idx, model_name in enumerate(models[:max_untooled]):
             self._check_cancelled()
             try:
-                timeout_sec = min(self._timeout_for(prefer_deep), LLM_QUICK_TIMEOUT_SECONDS)
+                timeout_sec = self._timeout_for(prefer_deep)
                 self._emit_action(
                     f"✍️ Werte Direktquellen ohne Such-Tool via {model_name} aus ({idx + 1}/{max_untooled})..."
                 )

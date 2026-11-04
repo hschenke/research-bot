@@ -19,7 +19,7 @@ from src.config.constants import (
     DEPRECATED_MODEL_PREFIXES,
     FALLBACK_AVAILABLE_MODELS,
     GROUNDING_QUOTA_COOLDOWN_SECONDS,
-    LLM_FAST_TIMEOUT_SECONDS,
+    LLM_DEFAULT_TIMEOUT_SECONDS,
     RETRY_BACKOFF_BASE_SECONDS,
     RETRY_BACKOFF_MAX_SECONDS,
 )
@@ -94,9 +94,9 @@ class SharedQuotaState:
 
 
 def create_fast_genai_client(api_key: str) -> genai.Client:
-    """Erstellt einen `genai.Client` ohne versteckte 30-Sekunden-SDK-Endlos-Retries."""
+    """Erstellt einen `genai.Client` mit großzügigem Client-Timeout ohne versteckte SDK-Endlos-Retries."""
     http_opts = {
-        "timeout": int(LLM_FAST_TIMEOUT_SECONDS * 1000),
+        "timeout": int(LLM_DEFAULT_TIMEOUT_SECONDS * 1000),
         "retry_options": {"attempts": 1},
     }
     try:

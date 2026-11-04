@@ -10,7 +10,12 @@ from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel
-from src.config.constants import MIN_LLM_TIMEOUT_SECONDS
+from src.config.constants import (
+    DEPTH_PROFILES,
+    LLM_DEFAULT_TIMEOUT_SECONDS,
+    LLM_FAST_TIMEOUT_SECONDS,
+    MIN_LLM_TIMEOUT_SECONDS,
+)
 from src.config.settings import AppSettings
 from src.domain.enums import JobPhase, JobStatus, ResearchDepth
 from src.domain.exceptions import LLMProviderError
@@ -287,3 +292,22 @@ def test_timeout_for_guarantees_minimum_seconds_and_clearing_deadline() -> None:
     # Synthese-Reset: Explizites deadline_monotonic=None muss Deadline aufheben
     synth_gw = gw.with_preferred_model("gemini-3.5-flash-lite", deadline_monotonic=None)
     assert synth_gw._deadline_monotonic is None
+
+
+def test_restored_workload_and_timeout_headroom() -> None:
+    settings = AppSettings(gemini_api_key="valid_test_key")
+    mock_client = MagicMock()
+    gw = GeminiInteractionsGateway(settings, shared_client=mock_client)
+
+    # Standard / Fast Timeout muss mindestens 60 Sekunden Headroom bieten
+    assert gw._timeout_for(prefer_deep=False) == LLM_FAST_TIMEOUT_SECONDS
+    assert gw._timeout_for(prefer_deep=False) >= 60.0
+
+    # Deep / Synthese Timeout muss 120 Sekunden Headroom bieten
+    assert gw._timeout_for(prefer_deep=True) == LLM_DEFAULT_TIMEOUT_SECONDS
+    assert gw._timeout_for(prefer_deep=True) >= 120.0
+
+    # Workload Profile auf bewährtem Standard
+    assert DEPTH_PROFILES[ResearchDepth.STANDARD].subtopic_count == 6
+    assert DEPTH_PROFILES[ResearchDepth.QUICK].subtopic_count == 3
+

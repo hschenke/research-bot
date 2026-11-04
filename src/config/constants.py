@@ -43,16 +43,16 @@ CANDIDATE_DEEP_MODELS: tuple[str, ...] = (
 DEEP_RESEARCH_AGENT_FAST: str = "deep-research-preview-04-2026"
 DEEP_RESEARCH_AGENT_MAX: str = "deep-research-max-preview-04-2026"
 
-# --- Kurze KI-Timeouts, 3-Versuche-Budget & Zeitlimits ---
-MIN_LLM_TIMEOUT_SECONDS: float = 10.0  # Absolutes Minimum für jeden KI-Aufruf
-LLM_QUICK_TIMEOUT_SECONDS: float = 25.0  # Ausreichend Zeit für Struktur- & Kurzsynthesen
-LLM_FAST_TIMEOUT_SECONDS: float = 35.0
-LLM_DEFAULT_TIMEOUT_SECONDS: float = 60.0
-MAX_STEP_ERROR_ATTEMPTS: int = 3  # Nach 3 Fehlversuchen sofort Methode wechseln / Teilergebnis!
-LLM_PER_MODEL_RETRIES: int = 2  # Bis zu 3 Versuche (Initial + 2 Retries) auf dem Wunschmodell
-MODEL_SWITCH_PAUSE_SECONDS: float = 0.25
-QUICK_MAX_TOTAL_SECONDS: float = 120.0  # Großzügiges Zeitbudget für Schnellüberblick (~1-2 Min.)
-QUICK_RESUME_COOLDOWN_SECONDS: float = 0.5
+# --- KI-Aufruf-Timeouts, Retries & Workload-Limits (großzügiger Headroom gegen Client-Timeouts) ---
+MIN_LLM_TIMEOUT_SECONDS: float = 15.0  # Absolutes Minimum für jeden KI-Aufruf
+LLM_QUICK_TIMEOUT_SECONDS: float = 60.0  # Großzügige Zeit auch bei schnellen Durchläufen
+LLM_FAST_TIMEOUT_SECONDS: float = 60.0  # 60s Zeitbudget für Standard-/Fast-Calls (gemini-3.5-flash-lite)
+LLM_DEFAULT_TIMEOUT_SECONDS: float = 120.0  # 120s für Tiefenrecherche & Gesamtberichts-Synthese
+MAX_STEP_ERROR_ATTEMPTS: int = 3  # Nach 3 Fehlversuchen Teilergebnis/Fallback
+LLM_PER_MODEL_RETRIES: int = 2  # Bis zu 3 Versuche (Initial + 2 Retries) auf dem Primärmodell
+MODEL_SWITCH_PAUSE_SECONDS: float = 0.5
+QUICK_MAX_TOTAL_SECONDS: float = 300.0  # Ausreichend Zeitfenster ohne künstliches Drosseln
+QUICK_RESUME_COOLDOWN_SECONDS: float = 1.0
 GROUNDING_QUOTA_COOLDOWN_SECONDS: float = 180.0
 
 MAX_AUTO_JOB_RESUMES: int = 2
@@ -63,7 +63,7 @@ AUTO_RECOVERY_CHECK_INTERVAL_SECONDS: float = 30.0
 UI_LIVE_REFRESH_INTERVAL: str = "3s"
 
 # --- Parallelisierung von Teilthemen ---
-QUICK_PARALLEL_SUBTOPICS: int = 2
+QUICK_PARALLEL_SUBTOPICS: int = 3
 STANDARD_PARALLEL_SUBTOPICS: int = 2
 
 # --- Hintergrund-Interaktionen & Polling ---
@@ -113,12 +113,12 @@ MAX_TOPIC_LENGTH: int = 300
 MAX_FOCUS_LENGTH: int = 2_000
 MAX_EMAIL_LENGTH: int = 254
 
-# --- Recherche-Tiefen-Profile (Schnellüberblick garantiert < 1 Min.) ---
+# --- Recherche-Tiefen-Profile (bewährter Standard-Workload) ---
 DEPTH_PROFILES: dict[ResearchDepth, DepthProfile] = {
     ResearchDepth.QUICK: DepthProfile(
         depth=ResearchDepth.QUICK,
         label="⚡ Schnellüberblick",
-        estimated_duration_label="max. 1 Min.",
+        estimated_duration_label="ca. 20–60 Sek.",
         subtopic_count=3,
         max_urls_per_subtopic=0,
         followup_rounds=0,
@@ -129,8 +129,8 @@ DEPTH_PROFILES: dict[ResearchDepth, DepthProfile] = {
     ResearchDepth.STANDARD: DepthProfile(
         depth=ResearchDepth.STANDARD,
         label="🔎 Standard-Recherche",
-        estimated_duration_label="ca. 2–6 Min.",
-        subtopic_count=5,
+        estimated_duration_label="ca. 3–8 Min.",
+        subtopic_count=6,
         max_urls_per_subtopic=2,
         followup_rounds=1,
         use_deep_research_agent=False,
@@ -140,9 +140,9 @@ DEPTH_PROFILES: dict[ResearchDepth, DepthProfile] = {
     ResearchDepth.DEEP: DepthProfile(
         depth=ResearchDepth.DEEP,
         label="🧠 Tiefenrecherche",
-        estimated_duration_label="ca. 12–30 Min.",
+        estimated_duration_label="ca. 15–35 Min.",
         subtopic_count=10,
-        max_urls_per_subtopic=3,
+        max_urls_per_subtopic=4,
         followup_rounds=1,
         use_deep_research_agent=True,
         deep_agent_name=DEEP_RESEARCH_AGENT_FAST,
@@ -151,9 +151,9 @@ DEPTH_PROFILES: dict[ResearchDepth, DepthProfile] = {
     ResearchDepth.EXHAUSTIVE: DepthProfile(
         depth=ResearchDepth.EXHAUSTIVE,
         label="🏛️ Marathon Deep-Dive (> 1 Std. möglich)",
-        estimated_duration_label="ca. 40–90+ Min.",
+        estimated_duration_label="ca. 45–120+ Min.",
         subtopic_count=15,
-        max_urls_per_subtopic=4,
+        max_urls_per_subtopic=5,
         followup_rounds=2,
         use_deep_research_agent=True,
         deep_agent_name=DEEP_RESEARCH_AGENT_MAX,

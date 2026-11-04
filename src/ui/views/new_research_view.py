@@ -80,7 +80,7 @@ def render_new_research_view(
                 format_func=lambda d: (
                     f"{DEPTH_PROFILES[d].label} ({DEPTH_PROFILES[d].estimated_duration_label})"
                 ),
-                help="Wähle das passende Recherche-Profil vom schnellen Turbo-Überblick (< 1 Min.) bis zur intensiven Tiefenrecherche.",
+                help="Wähle das passende Recherche-Profil vom schnellen Turbo-Überblick (ca. 20–60 Sek.) bis zur intensiven Tiefenrecherche.",
             )
 
         col_lang, col_mail = st.columns([1, 2])

@@ -5,8 +5,9 @@ from __future__ import annotations
 import streamlit as st
 
 from src.__version__ import __version__
-from src.config.constants import DEFAULT_MODEL
+from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import AuthRole
 from src.storage.base_repository import ResearchRepository
 from src.worker.dispatcher import JobDispatcher, resolve_effective_worker_mode
@@ -16,8 +17,10 @@ def render_settings_view(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
+    domain_config: DomainConfig | None = None,
 ) -> None:
     """Zeigt den aktuellen Verbindungsstatus aller Komponenten ohne Preisgabe von Secrets."""
+    cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
     st.subheader("⚙️ System- & Infrastrukturstatus")
 
     effective_worker = resolve_effective_worker_mode(settings)
@@ -34,9 +37,9 @@ def render_settings_view(
 
         with st.container(border=True):
             st.markdown("**🧠 KI-Engine (Google GenAI)**")
-            st.write(f"Standard-Modell: `{DEFAULT_MODEL}`")
+            st.write(f"Aktives Standard-Modell: `{cfg.default_model}`")
             if settings.has_gemini_configured:
-                st.success("GEMINI_API_KEY ist hinterlegt (Modelle dynamisch abrufbar).")
+                st.success("GEMINI_API_KEY ist hinterlegt.")
             else:
                 st.error("GEMINI_API_KEY fehlt.")
 
@@ -64,11 +67,11 @@ def render_settings_view(
         st.divider()
         st.markdown("**🛠️ Wartung & Recovery**")
         claimable = repository.find_claimable_job_ids(
-            stale_timeout_minutes=settings.stale_job_timeout_minutes,
+            stale_timeout_minutes=cfg.stale_job_timeout_minutes,
             limit=10,
         )
         st.caption(
-            f"Wartende oder verwaiste Jobs (Heartbeat älter als {settings.stale_job_timeout_minutes} Min.): "
+            f"Wartende oder verwaiste Jobs (Heartbeat älter als {cfg.stale_job_timeout_minutes} Min.): "
             f"**{len(claimable)}**"
         )
         if claimable and st.button("🔄 Verwaiste Jobs jetzt anstoßen", type="secondary"):

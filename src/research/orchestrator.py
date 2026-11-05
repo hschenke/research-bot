@@ -9,18 +9,19 @@ from typing import Protocol
 
 from src.config.constants import (
     AUTO_RESUME_COOLDOWN_SECONDS,
-    DEPTH_PROFILES,
     HEARTBEAT_INTERVAL_SECONDS,
     MAX_AUTO_JOB_RESUMES,
     QUICK_RESUME_COOLDOWN_SECONDS,
 )
+from src.config.domain_loader import render_prompt_template
 from src.config.settings import AppSettings
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import JobPhase, ResearchDepth
 from src.domain.exceptions import JobCancelledError, ResearchBotError
 from src.domain.models import DepthProfile, ResearchJob, ResearchPlan, ResearchReport
 from src.research.gemini_client import ResearchLLMGateway
 from src.research.llm_helpers import is_quota_error, sleep_with_cancel_check
-from src.research.planner import create_research_plan
+from src.research.planner import create_research_plan, resolve_max_subtopics
 from src.research.subtopic_runner import execute_subtopics_batch
 from src.research.synthesizer import synthesize_final_report
 from src.research.web_fetcher import SafeWebFetcher
@@ -68,10 +69,11 @@ class ResearchOrchestrator:
 
     def execute_job(self, job_id: str, worker_id: str = "worker") -> ResearchReport | None:
         """Beansprucht und verarbeitet einen Auftrag inkl. Live-Status & Selbstheilung."""
+        domain_cfg = self._repo.get_domain_config()
         claimed = self._repo.claim_job(
             job_id=job_id,
             worker_id=worker_id,
-            stale_timeout_minutes=self._settings.stale_job_timeout_minutes,
+            stale_timeout_minutes=domain_cfg.stale_job_timeout_minutes,
         )
         if not claimed:
             logger.info("Job '%s' wird bereits verarbeitet oder ist nicht mehr aktiv.", job_id)
@@ -183,8 +185,9 @@ class ResearchOrchestrator:
         self,
         job: ResearchJob,
         deadline_monotonic: float | None,
+        domain_config: DomainConfig,
     ) -> ResearchLLMGateway:
-        job_model = getattr(job, "model", None) or self._settings.gemini_fast_model
+        job_model = getattr(job, "model", None) or domain_config.default_model
         if hasattr(self._llm, "with_preferred_model"):
             try:
                 return self._llm.with_preferred_model(
@@ -194,6 +197,7 @@ class ResearchOrchestrator:
                     fast_mode=(job.depth == ResearchDepth.QUICK),
                     deadline_monotonic=deadline_monotonic,
                     language=job.language,
+                    available_models=domain_config.available_models,
                 )
             except TypeError:
                 return self._llm.with_preferred_model(job_model)
@@ -205,13 +209,16 @@ class ResearchOrchestrator:
         allow_partial_on_error: bool = False,
         deadline_monotonic: float | None = None,
     ) -> ResearchReport:
-        profile = DEPTH_PROFILES[job.depth]
+        domain_config = self._repo.get_domain_config()
+        profile = domain_config.get_depth_profile(job.depth)
         checkpoint = self._repo.load_checkpoint(job.id)
         self._check_alive(job.id)
 
-        llm = self._bind_gateway(job, deadline_monotonic)
-        plan = checkpoint.plan or self._run_planning_step(job, profile, llm)
-        baseline_md = checkpoint.baseline_markdown or self._run_baseline_step(job, profile, llm)
+        llm = self._bind_gateway(job, deadline_monotonic, domain_config)
+        plan = checkpoint.plan or self._run_planning_step(job, profile, llm, domain_config)
+        baseline_md = checkpoint.baseline_markdown or self._run_baseline_step(
+            job, profile, llm, domain_config
+        )
         findings = execute_subtopics_batch(
             repository=self._repo,
             gateway=llm,
@@ -224,6 +231,7 @@ class ResearchOrchestrator:
             check_alive=lambda: self._check_alive(job.id),
             allow_partial_on_error=allow_partial_on_error,
             deadline_monotonic=deadline_monotonic,
+            domain_config=domain_config,
         )
 
         self._check_alive(job.id)
@@ -231,24 +239,25 @@ class ResearchOrchestrator:
         synth_log = (
             f"Erstelle Teilergebnis-Bericht ({len(findings)}/{len(plan.subtopics)} Teilgebiete ausgewertet)..."
             if is_partial
-            else "Synthetisiere Gesamtbericht, Executive Summary und Quellenverzeichnis..."
+            else "Synthetisiere kompakten Bericht und Quellenverzeichnis..."
         )
         self._repo.update_progress(
             job_id=job.id,
             phase=JobPhase.SYNTHESIZING,
             progress_percent=88,
             message=synth_log,
-            live_status_override="✍️ Formuliere Executive Summary, Kernaussagen & Quellenverzeichnis...",
+            live_status_override="✍️ Verdichte Ergebnisse in einen knackigen Bericht...",
         )
 
         refreshed_job = self._repo.get_job(job.id) or job
-        job_model = getattr(job, "model", None) or self._settings.gemini_fast_model
-        model_label = (
-            profile.deep_agent_name
-            if (profile.use_deep_research_agent and self._settings.enable_deep_research_agent)
-            else job_model
+        job_model = getattr(job, "model", None) or domain_config.default_model
+        use_agent = (
+            profile.use_deep_research_agent
+            and self._settings.enable_deep_research_agent
+            and domain_config.enable_deep_research_agent
         )
-        synth_llm = self._bind_gateway(job, deadline_monotonic=None)
+        model_label = profile.deep_agent_name if use_agent else job_model
+        synth_llm = self._bind_gateway(job, deadline_monotonic=None, domain_config=domain_config)
         report = synthesize_final_report(
             gateway=synth_llm,
             job=refreshed_job,
@@ -258,6 +267,8 @@ class ResearchOrchestrator:
             model_used=model_label,
             duration_seconds=_calculate_elapsed_seconds(refreshed_job.started_at),
             on_action=lambda msg: self._repo.update_live_action(job.id, msg),
+            profile=profile,
+            domain_config=domain_config,
         )
         self._check_alive(job.id)
         completion_note = (
@@ -273,15 +284,17 @@ class ResearchOrchestrator:
         job: ResearchJob,
         profile: DepthProfile,
         gateway: ResearchLLMGateway,
+        domain_config: DomainConfig,
     ) -> ResearchPlan:
+        max_subtopics = resolve_max_subtopics(job, profile, domain_config)
         self._repo.update_progress(
             job_id=job.id,
             phase=JobPhase.PLANNING,
             progress_percent=8,
-            message=f"Erstelle Recherche-Plan ({profile.subtopic_count} Teilgebiete)...",
-            live_status_override=f"🧠 Entwerfe Suchstrategie & {profile.subtopic_count} Leitfragen...",
+            message=f"Erstelle Recherche-Plan (bis zu {max_subtopics} Teilgebiete)...",
+            live_status_override=f"🧠 Entwerfe schlanke Suchstrategie (max. {max_subtopics} Fokusfragen)...",
         )
-        plan = create_research_plan(gateway, job, profile)
+        plan = create_research_plan(gateway, job, profile, domain_config=domain_config)
         self._check_alive(job.id)
         self._repo.save_plan_checkpoint(job.id, plan)
         return plan
@@ -291,8 +304,14 @@ class ResearchOrchestrator:
         job: ResearchJob,
         profile: DepthProfile,
         gateway: ResearchLLMGateway,
+        domain_config: DomainConfig,
     ) -> str:
-        if not (profile.use_deep_research_agent and self._settings.enable_deep_research_agent):
+        agent_enabled = (
+            profile.use_deep_research_agent
+            and self._settings.enable_deep_research_agent
+            and domain_config.enable_deep_research_agent
+        )
+        if not agent_enabled:
             return ""
         self._repo.update_progress(
             job_id=job.id,
@@ -301,11 +320,24 @@ class ResearchOrchestrator:
             message=f"Führe autonome Deep-Research-Voranalyse ({profile.deep_agent_name}) aus...",
             live_status_override=f"🔬 Deep-Research-Agent ({profile.deep_agent_name}) recherchiert im Hintergrund...",
         )
-        baseline = gateway.run_deep_research_agent(
-            prompt=f"Recherchiere umfassend zum Thema: {job.topic}\n{job.focus_instructions}",
-            agent_name=profile.deep_agent_name,
-            on_poll_tick=lambda: self._check_alive(job.id),
+        focus_block = job.focus_instructions.strip()
+        baseline_prompt = render_prompt_template(
+            domain_config.prompts.deep_baseline_prompt,
+            {"topic": job.topic, "focus_block": focus_block},
         )
+        try:
+            baseline = gateway.run_deep_research_agent(
+                prompt=baseline_prompt,
+                agent_name=profile.deep_agent_name,
+                on_poll_tick=lambda: self._check_alive(job.id),
+                fallback_system_instruction=domain_config.prompts.deep_baseline_fallback_system_prompt,
+            )
+        except TypeError:
+            baseline = gateway.run_deep_research_agent(
+                prompt=baseline_prompt,
+                agent_name=profile.deep_agent_name,
+                on_poll_tick=lambda: self._check_alive(job.id),
+            )
         self._check_alive(job.id)
         self._repo.save_baseline_checkpoint(job.id, baseline.text)
         return baseline.text

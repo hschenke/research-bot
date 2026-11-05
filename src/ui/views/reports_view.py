@@ -7,8 +7,9 @@ from typing import Any
 
 import streamlit as st
 
-from src.config.constants import DEFAULT_MODEL, DEPTH_PROFILES
+from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import AuthRole
 from src.domain.models import ResearchReport
 from src.notifications.email_renderer import (
@@ -26,8 +27,10 @@ def render_reports_view(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
+    domain_config: DomainConfig | None = None,
 ) -> None:
     """Rendert die Übersicht und Detailansicht aller fertiggestellten Recherche-Berichte."""
+    cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
     search_query = st.text_input(
         "🔍 Berichte durchsuchen",
         placeholder="Thema, Stichwort oder Inhalt filtern...",
@@ -47,7 +50,7 @@ def render_reports_view(
         options=reports,
         index=default_index,
         format_func=lambda r: (
-            f"{r.title}  ·  [{format_datetime_german(r.created_at)} | {DEPTH_PROFILES[r.depth].label}]"
+            f"{r.title}  ·  [{format_datetime_german(r.created_at)} | {cfg.get_depth_profile(r.depth).label}]"
         ),
     )
 
@@ -57,6 +60,7 @@ def render_reports_view(
             settings=settings,
             repository=repository,
             role=role,
+            cfg=cfg,
         )
 
 
@@ -77,14 +81,18 @@ def _render_single_report(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
+    cfg: DomainConfig,
 ) -> None:
     st.divider()
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-    _render_kpi_card(col_m1, "Tiefe", DEPTH_PROFILES[report.depth].label)
+    _render_kpi_card(col_m1, "Tiefe", cfg.get_depth_profile(report.depth).label)
     _render_kpi_card(col_m2, "Laufzeit", format_duration_human(report.duration_seconds))
     _render_kpi_card(col_m3, "Verifizierte Quellen", str(len(report.citations)))
     _render_kpi_card(col_m4, "Erstellt", format_datetime_german(report.created_at))
-    safe_model = normalize_preferred_model(report.model_used or DEFAULT_MODEL)
+    safe_model = normalize_preferred_model(
+        report.model_used or cfg.default_model,
+        allowed_models=cfg.available_models,
+    )
     st.caption(f"🤖 Erstellt mit Modell: `{safe_model}`")
 
     app_url = build_report_app_url(
@@ -92,7 +100,9 @@ def _render_single_report(
         job_id=report.job_id,
         app_password=settings.app_password,
     )
-    html_export = render_report_email_html(report=report, app_report_url=app_url)
+    html_export = render_report_email_html(
+        report=report, app_report_url=app_url, domain_config=cfg
+    )
 
     dl_col1, dl_col2, mail_col, del_col = st.columns([1.2, 1.2, 1.6, 1])
     with dl_col1:

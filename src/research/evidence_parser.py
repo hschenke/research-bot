@@ -49,7 +49,11 @@ def extract_inline_citations(grounded: GroundedGeneration) -> list[SourceCitatio
     return merge_citations(grounded.citations, inline)
 
 
-def extract_bullet_facts(markdown_text: str, fallback_title: str) -> list[str]:
+def extract_bullet_facts(
+    markdown_text: str,
+    fallback_title: str,
+    max_facts: int = 5,
+) -> list[str]:
     """Extrahiert prägnante Stichpunkte direkt aus einer Markdown-Antwort ohne Zweit-Aufruf."""
     facts: list[str] = []
     for line in markdown_text.splitlines():
@@ -58,7 +62,7 @@ def extract_bullet_facts(markdown_text: str, fallback_title: str) -> list[str]:
             cleaned = match.group(1).strip()
             if 12 <= len(cleaned) <= 300:
                 facts.append(cleaned)
-        if len(facts) >= 5:
+        if len(facts) >= max_facts:
             break
     if facts:
         return facts
@@ -66,11 +70,14 @@ def extract_bullet_facts(markdown_text: str, fallback_title: str) -> list[str]:
     return [first_para[:240]] if first_para else [fallback_title]
 
 
-def format_scraped_pages(pages: list[FetchedWebPage]) -> str:
+def format_scraped_pages(
+    pages: list[FetchedWebPage],
+    max_chars_per_page: int = 3500,
+) -> str:
     """Bereitet extrahierte Volltexte geladener Webseiten für die Tiefenanalyse auf."""
     if not pages:
         return "Keine zusätzlichen Volltext-Seiten geladen."
     return "\n\n".join(
-        f"### Volltext-Quelle: {page.title or page.url}\nURL: {page.url}\nAuszug:\n{page.text_content[:4500]}"
+        f"### Volltext-Quelle: {page.title or page.url}\nURL: {page.url}\nAuszug:\n{page.text_content[:max_chars_per_page]}"
         for page in pages
     )

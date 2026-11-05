@@ -110,8 +110,9 @@ class JobDispatcher:
             _LAST_RECOVERY_CHECK_MONOTONIC = now_mono
 
         repository.cleanup_stuck_cancellations()
+        stale_minutes = repository.get_domain_config().stale_job_timeout_minutes
         claimable_ids = repository.find_claimable_job_ids(
-            stale_timeout_minutes=self._settings.stale_job_timeout_minutes,
+            stale_timeout_minutes=stale_minutes,
             limit=3,
         )
         if not claimable_ids:

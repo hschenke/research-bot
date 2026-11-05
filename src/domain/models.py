@@ -23,6 +23,10 @@ class DepthProfile:
     use_deep_research_agent: bool
     deep_agent_name: str
     inter_step_pause_seconds: float
+    target_word_range: str = "200–450 Wörter"
+    max_subtopic_bullets: int = 5
+    parallel_subtopics: int = 2
+    prefer_deep_model: bool = False
 
 
 class ResearchRequest(BaseModel):
@@ -33,6 +37,7 @@ class ResearchRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=300)
     focus_instructions: str = Field(default="", max_length=2000)
     depth: ResearchDepth = Field(default=ResearchDepth.STANDARD)
+    report_format: str = Field(default="compact", min_length=1, max_length=40)
     language: str = Field(default="de", pattern=r"^(de|en)$")
     notify_email: str = Field(default="", max_length=254)
     model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
@@ -101,6 +106,7 @@ class ResearchJob(BaseModel):
     topic: str
     focus_instructions: str = ""
     depth: ResearchDepth = ResearchDepth.STANDARD
+    report_format: str = "compact"
     language: str = "de"
     notify_email: str = ""
     model: str = Field(default="gemini-3.5-flash-lite")
@@ -121,6 +127,8 @@ class ResearchJob(BaseModel):
     def __getattr__(self, name: str) -> Any:
         if name == "model":
             return "gemini-3.5-flash-lite"
+        if name == "report_format":
+            return "compact"
         raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
 

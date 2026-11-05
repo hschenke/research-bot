@@ -11,15 +11,17 @@ from src.storage.factory import create_repository
 from src.ui.auth_view import determine_session_role, render_login_gate_or_sidebar
 from src.ui.styles import inject_static_styles
 from src.ui.views.active_jobs_view import render_active_jobs_view
+from src.ui.views.domain_config_view import render_domain_config_view
 from src.ui.views.new_research_view import render_new_research_view
 from src.ui.views.reports_view import render_reports_view
 from src.ui.views.settings_view import render_settings_view
 
-NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "settings")
+NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "rules", "settings")
 NAV_TAB_TITLES: tuple[str, ...] = (
     "🚀 Neue Recherche",
     "⏳ Laufende Jobs",
     "📚 Ergebnisse & Archiv",
+    "🎛️ KI- & Fachlogik",
     "⚙️ Systemstatus",
 )
 NAV_KEY_TO_TITLE: dict[str, str] = dict(zip(NAV_TAB_KEYS, NAV_TAB_TITLES, strict=True))
@@ -47,7 +49,7 @@ def _resolve_default_tab_title() -> str:
 
 
 def run_streamlit_app() -> None:
-    """Initialisiert Seitenlayout, Authentifizierung und sofort reagierende Tab-Navigation."""
+    """Initialisiert Seitenlayout, Authentifizierung, Fachlogik-Laden und Tab-Navigation."""
     st.set_page_config(
         page_title="Research-Bot",
         page_icon="🔬",
@@ -59,6 +61,7 @@ def run_streamlit_app() -> None:
     settings: AppSettings = load_app_settings()
     repository = _get_cached_repository(settings.turso_url, settings.sqlite_path)
     repository.cleanup_stuck_cancellations()
+    domain_config = repository.get_domain_config()
 
     st.sidebar.markdown(f"### 🔬 Research-Bot `v{__version__}`")
     role = determine_session_role(settings)
@@ -67,21 +70,47 @@ def run_streamlit_app() -> None:
 
     st.title("🔬 Deep Web Research-Bot")
     st.caption(
-        "Autonome, mehrstufige Web-Recherche im Hintergrund (auch > 1 Stunde) "
-        "mit automatischer Selbstheilung & E-Mail-Benachrichtigung bei Fertigstellung."
+        "Knackige, faktenbasierte Web-Recherche im Hintergrund – mit frei editierbaren KI-Regeln, "
+        "Prompts & Berichtsformaten direkt in der Web-App."
     )
 
     default_tab_title = _resolve_default_tab_title()
-    tab_new, tab_jobs, tab_reports, tab_settings = st.tabs(
+    tab_new, tab_jobs, tab_reports, tab_rules, tab_settings = st.tabs(
         list(NAV_TAB_TITLES),
         default=default_tab_title,
     )
 
     with tab_new:
-        render_new_research_view(settings=settings, repository=repository, role=role)
+        render_new_research_view(
+            settings=settings,
+            repository=repository,
+            role=role,
+            domain_config=domain_config,
+        )
     with tab_jobs:
-        render_active_jobs_view(settings=settings, repository=repository, role=role)
+        render_active_jobs_view(
+            settings=settings,
+            repository=repository,
+            role=role,
+            domain_config=domain_config,
+        )
     with tab_reports:
-        render_reports_view(settings=settings, repository=repository, role=role)
+        render_reports_view(
+            settings=settings,
+            repository=repository,
+            role=role,
+            domain_config=domain_config,
+        )
+    with tab_rules:
+        render_domain_config_view(
+            repository=repository,
+            role=role,
+            domain_config=domain_config,
+        )
     with tab_settings:
-        render_settings_view(settings=settings, repository=repository, role=role)
+        render_settings_view(
+            settings=settings,
+            repository=repository,
+            role=role,
+            domain_config=domain_config,
+        )

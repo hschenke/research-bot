@@ -22,6 +22,7 @@ from src.config.constants import (
     MIN_LLM_TIMEOUT_SECONDS,
     MODEL_SWITCH_PAUSE_SECONDS,
 )
+from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
 from src.domain.exceptions import JobCancelledError, LLMProviderError
 from src.domain.models import SourceCitation
@@ -93,6 +94,7 @@ class ResearchLLMGateway(Protocol):
         prompt: str,
         agent_name: str,
         on_poll_tick: Callable[[], None] | None = None,
+        fallback_system_instruction: str = "",
     ) -> GroundedGeneration: ...
 
 
@@ -111,6 +113,7 @@ class GeminiInteractionsGateway:
         language: str = "de",
         quota_state: SharedQuotaState | None = None,
         web_search_fn: WebSearchFn | None = _UNSET,
+        available_models: list[str] | tuple[str, ...] | None = None,
     ) -> None:
         if not settings.has_gemini_configured:
             raise LLMProviderError(
@@ -129,10 +132,13 @@ class GeminiInteractionsGateway:
             if web_search_fn is _UNSET
             else web_search_fn
         )
+        self._available_models: tuple[str, ...] = (
+            tuple(available_models) if available_models else CANDIDATE_FAST_MODELS
+        )
         fast_target = preferred_model or settings.gemini_fast_model or DEFAULT_MODEL
         deep_target = preferred_model or settings.gemini_deep_model or DEFAULT_MODEL
-        self._fast_chain = build_model_chain(fast_target, CANDIDATE_FAST_MODELS)
-        self._deep_chain = build_model_chain(deep_target, CANDIDATE_DEEP_MODELS)
+        self._fast_chain = build_model_chain(fast_target, self._available_models)
+        self._deep_chain = build_model_chain(deep_target, available_models or CANDIDATE_DEEP_MODELS)
 
     def with_preferred_model(
         self,
@@ -142,6 +148,7 @@ class GeminiInteractionsGateway:
         fast_mode: bool | None = None,
         deadline_monotonic: float | None = _UNSET,
         language: str | None = None,
+        available_models: list[str] | tuple[str, ...] | None = None,
     ) -> GeminiInteractionsGateway:
         """Erzeugt eine Gateway-Sicht mit gemeinsamem Client, Quota-Gedächtnis und Live-Action-Hook."""
         return GeminiInteractionsGateway(
@@ -155,6 +162,7 @@ class GeminiInteractionsGateway:
             language=language or self._language,
             quota_state=self._quota_state,
             web_search_fn=self._web_search_fn,
+            available_models=available_models or self._available_models,
         )
 
     def with_action_callback(self, on_action: Callable[[str], None]) -> GeminiInteractionsGateway:
@@ -379,6 +387,7 @@ class GeminiInteractionsGateway:
         prompt: str,
         agent_name: str,
         on_poll_tick: Callable[[], None] | None = None,
+        fallback_system_instruction: str = "",
     ) -> GroundedGeneration:
         self._emit_action(f"🔬 Starte Deep-Research-Agent ({agent_name})...")
         polled = poll_deep_research_agent(
@@ -392,9 +401,13 @@ class GeminiInteractionsGateway:
             text, citations = polled
             return GroundedGeneration(text=text, citations=citations, model_used=agent_name)
 
+        sys_inst = (
+            fallback_system_instruction.strip()
+            or load_default_domain_config().prompts.deep_baseline_fallback_system_prompt
+        )
         return self.generate_grounded(
             prompt=prompt,
-            system_instruction="Führe eine umfassende Vorabrecherche mit verifizierten Web-Quellen durch.",
+            system_instruction=sys_inst,
             use_url_context=False,
             prefer_deep=True,
         )

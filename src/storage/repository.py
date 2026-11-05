@@ -12,6 +12,7 @@ from src.config.constants import (
     DEFAULT_REPORTS_LIST_LIMIT,
     DEFAULT_STALE_JOB_MINUTES,
 )
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import JobPhase, JobStatus
 from src.domain.models import (
     ProgressLogEntry,
@@ -22,6 +23,7 @@ from src.domain.models import (
     SubTopicFinding,
 )
 from src.storage.base_repository import JobCheckpoint, ResearchRepository, utc_now_iso
+from src.storage.config_store import DomainConfigStore
 from src.storage.executor import SqlExecutor
 from src.storage.job_lifecycle_store import JobLifecycleStore
 from src.storage.report_store import CheckpointAndReportStore
@@ -44,6 +46,7 @@ class SqlResearchRepository(ResearchRepository):
         self._executor = executor
         self._report_store = CheckpointAndReportStore(executor)
         self._lifecycle_store = JobLifecycleStore(executor)
+        self._config_store = DomainConfigStore(executor)
 
     @property
     def backend_name(self) -> str:
@@ -51,13 +54,15 @@ class SqlResearchRepository(ResearchRepository):
 
     def initialize_schema(self) -> None:
         self._executor.execute_batch([(stmt, ()) for stmt in SCHEMA_STATEMENTS])
-        try:
-            self._executor.execute(
-                "ALTER TABLE research_jobs ADD COLUMN model TEXT NOT NULL DEFAULT 'gemini-3.5-flash-lite'",
-                (),
-            )
-        except Exception as exc:
-            logger.debug("Spalte 'model' existiert bereits in research_jobs: %s", exc)
+        migrations = (
+            "ALTER TABLE research_jobs ADD COLUMN model TEXT NOT NULL DEFAULT 'gemini-3.5-flash-lite'",
+            "ALTER TABLE research_jobs ADD COLUMN report_format TEXT NOT NULL DEFAULT 'compact'",
+        )
+        for alter_sql in migrations:
+            try:
+                self._executor.execute(alter_sql, ())
+            except Exception as exc:
+                logger.debug("Schema-Migration übersprungen (%s): %s", alter_sql, exc)
         self.cleanup_stuck_cancellations()
 
     def create_job(self, request: ResearchRequest) -> ResearchJob:
@@ -73,15 +78,16 @@ class SqlResearchRepository(ResearchRepository):
         self._executor.execute(
             """
             INSERT INTO research_jobs (
-                id, topic, focus_instructions, depth, language, notify_email,
+                id, topic, focus_instructions, depth, report_format, language, notify_email,
                 model, status, phase, progress_percent, status_message, progress_log_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
                 request.topic,
                 request.focus_instructions,
                 request.depth.value,
+                request.report_format,
                 request.language,
                 request.notify_email,
                 request.model,
@@ -280,6 +286,18 @@ class SqlResearchRepository(ResearchRepository):
         statuses: tuple[JobStatus, ...] = (JobStatus.CANCELLED, JobStatus.FAILED),
     ) -> int:
         return self._lifecycle_store.delete_by_statuses(statuses)
+
+    def get_domain_config(self) -> DomainConfig:
+        return self._config_store.load_domain_config()
+
+    def has_custom_domain_config(self) -> bool:
+        return self._config_store.has_custom_overrides()
+
+    def save_domain_config(self, config: DomainConfig) -> DomainConfig:
+        return self._config_store.save_domain_config(config)
+
+    def reset_domain_config(self) -> DomainConfig:
+        return self._config_store.reset_domain_config()
 
     def close(self) -> None:
         self._executor.close()

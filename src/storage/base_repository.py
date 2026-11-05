@@ -11,6 +11,8 @@ from src.config.constants import (
     DEFAULT_REPORTS_LIST_LIMIT,
     DEFAULT_STALE_JOB_MINUTES,
 )
+from src.config.domain_loader import load_default_domain_config
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import JobPhase, JobStatus
 from src.domain.models import (
     ResearchJob,
@@ -187,6 +189,22 @@ class ResearchRepository(ABC):
             if self.delete_job_and_report(job.id):
                 deleted += 1
         return deleted
+
+    def get_domain_config(self) -> DomainConfig:
+        """Lädt die aktive Fach- und KI-Konfiguration (inkl. eventueller Web-App-Anpassungen)."""
+        return load_default_domain_config()
+
+    def has_custom_domain_config(self) -> bool:
+        """Gibt zurück, ob vom Standard abweichende Fachlogik-Einstellungen gespeichert sind."""
+        return False
+
+    def save_domain_config(self, config: DomainConfig) -> DomainConfig:
+        """Speichert angepasste Fachlogik-Einstellungen persistent."""
+        return config
+
+    def reset_domain_config(self) -> DomainConfig:
+        """Setzt die Fachlogik auf die Standardwerte aus `config/settings.yaml` zurück."""
+        return load_default_domain_config()
 
     @abstractmethod
     def close(self) -> None:

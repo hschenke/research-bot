@@ -1,5 +1,12 @@
 """Domain-Schicht: Exporte der Modelle, Enumerationen und Exceptions."""
 
+from src.domain.domain_config import (
+    DepthProfileConfig,
+    DomainConfig,
+    PromptTemplatesConfig,
+    ReportFormatPreset,
+    StyleRulesConfig,
+)
 from src.domain.enums import (
     AuthRole,
     EmailProvider,
@@ -36,7 +43,9 @@ from src.domain.models import (
 __all__ = [
     "AuthRole",
     "DepthProfile",
+    "DepthProfileConfig",
     "DispatchError",
+    "DomainConfig",
     "EmailProvider",
     "InputValidationError",
     "JobCancelledError",
@@ -45,6 +54,8 @@ __all__ = [
     "LLMProviderError",
     "NotificationError",
     "ProgressLogEntry",
+    "PromptTemplatesConfig",
+    "ReportFormatPreset",
     "ResearchBotError",
     "ResearchDepth",
     "ResearchJob",
@@ -56,6 +67,7 @@ __all__ = [
     "SourceCitation",
     "StorageConnectionError",
     "StorageError",
+    "StyleRulesConfig",
     "SubTopicFinding",
     "SubTopicPlan",
     "WebFetchError",

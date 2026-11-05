@@ -1,5 +1,259 @@
+# Zentrale Fachlogik-, KI-Prompt- und Anwendungskonfiguration für Research-Bot.
+# Alle Werte in dieser Datei dienen als transparente Standardbasis und sind
+# vollständig in der Web-App unter "🎛️ KI- & Fachlogik" sichtbar und editierbar.
+
 default_language: "de"
 default_depth: "standard"
+default_report_format: "compact"
+default_model: "gemini-3.5-flash-lite"
+available_models:
+  - "gemini-3.5-flash-lite"
+
+enable_deep_research_agent: true
 max_concurrent_local_jobs: 4
 stale_job_timeout_minutes: 5
-enable_deep_research_agent: true
+
+limits:
+  max_search_queries_per_subtopic: 3
+  max_open_questions_per_followup: 2
+  max_chars_per_scraped_page: 3500
+  max_finding_chars_in_synthesis: 1800
+  max_baseline_chars_in_context: 2200
+  max_takeaways_count: 5
+
+style:
+  global_style_rules: |-
+    - Schreibe extrem prägnant, direkt und faktenreich – null Fülltext, null Einleitungsfloskeln („In diesem Bericht..."), null Marketingsprache.
+    - Bevorzuge knappe Stichpunkte, konkrete Zahlen/Daten und kompakte Markdown-Tabellen gegenüber langen Fließtext-Absätzen (maximal 2–3 kurze Sätze pro Absatz).
+    - Strikte Redundanzfreiheit: Jeder Fakt darf im gesamten Bericht nur ein einziges Mal stehen. Wiederhole Kernaussagen niemals im Hauptteil oder am Ende.
+    - Kein künstliches Fazit- oder Ausblick-Kapitel anhängen, sofern es keine echten neuen Handlungsempfehlungen enthält.
+  format_override_rules: |-
+    - OBERSTE PRIORITÄT – NUTZERWUNSCH SCHLÄGT STANDARDSTRUKTUR: Prüfe Thema, Fokus-Hinweise und gewähltes Berichtsformat genau.
+    - Wenn eine knappe Liste, Aufzählung, Top-N-Auswahl, Stichpunktliste oder Kurzantwort verlangt wird, liefere AUSSCHLIESSLICH genau diese knappe Liste/Struktur!
+    - Lass bei Listen- oder Ultrakurzwünschen jegliches Vorwort, Executive Summary, Kapitel-Prosa und Fazit komplett weg – starte sofort mit dem ersten Listenpunkt.
+  compact_list_keywords:
+    - "knappe liste"
+    - "kurze liste"
+    - "nur eine liste"
+    - "nur liste"
+    - "nur als liste"
+    - "reine liste"
+    - "stichpunktliste"
+    - "nur stichpunkte"
+    - "knappe aufzählung"
+    - "short list"
+    - "brief list"
+    - "bullet list"
+    - "only a list"
+    - "concise list"
+  include_sources_section: true
+  sources_heading_de: "## Quellen"
+  sources_heading_en: "## Sources"
+  partial_notice_de: "> **Hinweis (Teilergebnis):** Aufgrund von API- oder Zeitlimits wurden **{done} von {total}** geplanten Teilgebieten ausgewertet{skipped_suffix}."
+  partial_notice_en: "> **Note (Partial Result):** Due to API or time limits, **{done} of {total}** planned subtopics were evaluated{skipped_suffix}."
+
+report_formats:
+  compact:
+    label: "⚡ Kompakt & Knackig (Standard)"
+    instructions: |-
+      Erstelle einen straffen, hochverdichteten Kurzbericht:
+      - Starte mit 3–4 knackigen Kernaussagen (Bullet-Points mit den wichtigsten Fakten/Zahlen).
+      - Gliedere die Details darunter in wenige, präzise Abschnitte mit Stichpunkten oder kleinen Tabellen statt Textwüsten.
+      - Verzichte auf ein redundantes Schlussfazit.
+    max_subtopics_cap: 0
+    omit_wrapper_sections: false
+  list:
+    label: "📋 Nur knappe Liste (Ohne Vorwort & Fazit)"
+    instructions: |-
+      Liefere AUSSCHLIESSLICH eine knappe, sofort scannbare Liste (Bullet-Points oder nummeriert).
+      - Pro Eintrag maximal 1 bis 2 kurze Zeilen: Fettgedruckter Kernbegriff + wichtigste Fakten/Zahlen + direkter Quellenlink `[Quelle](URL)`.
+      - KEIN Einleitungstext, KEIN Executive Summary, KEINE Unterkapitel-Aufsätze, KEIN Fazit!
+    max_subtopics_cap: 2
+    omit_wrapper_sections: true
+  comparison_table:
+    label: "📊 Vergleichstabelle + Kurzfakten"
+    instructions: |-
+      Stelle eine kompakte Markdown-Vergleichstabelle der wichtigsten Optionen/Kriterien in den Mittelpunkt, ergänzt durch maximal 4–6 knappe Entscheidungs-Stichpunkte mit Quellenlinks. Kein Fließtext-Ballast.
+    max_subtopics_cap: 3
+    omit_wrapper_sections: true
+  detailed_dossier:
+    label: "📑 Fach-Dossier (Tiefgehend, ohne Fülltext)"
+    instructions: |-
+      Erstelle ein klar strukturiertes, analytisches Fach-Dossier mit kurzem TL;DR, faktenreichen Fachkapiteln (Zahlen, Vergleiche, Chancen/Risiken) und knapper Einordnung – hohe Informationsdichte ohne leere Prosa.
+    max_subtopics_cap: 0
+    omit_wrapper_sections: false
+
+depth_profiles:
+  quick:
+    label: "⚡ Schnellüberblick"
+    estimated_duration_label: "ca. 20–60 Sek."
+    subtopic_count: 3
+    target_word_range: "100–250 Wörter"
+    max_subtopic_bullets: 4
+    max_urls_per_subtopic: 0
+    followup_rounds: 0
+    parallel_subtopics: 3
+    use_deep_research_agent: false
+    deep_agent_name: ""
+    prefer_deep_model: false
+    inter_step_pause_seconds: 0.0
+  standard:
+    label: "🔎 Standard-Recherche"
+    estimated_duration_label: "ca. 2–5 Min."
+    subtopic_count: 6
+    target_word_range: "200–450 Wörter"
+    max_subtopic_bullets: 5
+    max_urls_per_subtopic: 2
+    followup_rounds: 1
+    parallel_subtopics: 2
+    use_deep_research_agent: false
+    deep_agent_name: ""
+    prefer_deep_model: false
+    inter_step_pause_seconds: 0.2
+  deep:
+    label: "🧠 Tiefenrecherche"
+    estimated_duration_label: "ca. 10–25 Min."
+    subtopic_count: 10
+    target_word_range: "450–850 Wörter"
+    max_subtopic_bullets: 6
+    max_urls_per_subtopic: 4
+    followup_rounds: 1
+    parallel_subtopics: 2
+    use_deep_research_agent: true
+    deep_agent_name: "deep-research-preview-04-2026"
+    prefer_deep_model: true
+    inter_step_pause_seconds: 0.8
+  exhaustive:
+    label: "🏛️ Marathon Deep-Dive (> 1 Std. möglich)"
+    estimated_duration_label: "ca. 35–90+ Min."
+    subtopic_count: 15
+    target_word_range: "850–1.400 Wörter"
+    max_subtopic_bullets: 7
+    max_urls_per_subtopic: 5
+    followup_rounds: 2
+    parallel_subtopics: 2
+    use_deep_research_agent: true
+    deep_agent_name: "deep-research-max-preview-04-2026"
+    prefer_deep_model: true
+    inter_step_pause_seconds: 1.2
+
+prompts:
+  planner_system_prompt: |-
+    Du bist ein präziser Research-Architekt. Antworte ausschließlich auf {language}.
+    Plane schlank und zielgerichtet ohne künstliches Aufblähen:
+    {style_rules}
+    {format_override_rules}
+  planner_user_prompt: |-
+    Erstelle einen fokussierten Recherche-Plan zum Thema:
+    "{topic}"
+    {focus_block}
+    Gewünschtes Berichtsformat ({format_label}):
+    {format_instructions}
+
+    Plane 1 bis maximal {max_subtopics} klar abgegrenzte, überschneidungsfreie Teilthemen (`subtopics`).
+    WICHTIG: Erzeuge NUR so viele Teilthemen, wie für eine knappe, vollständige Beantwortung wirklich nötig sind (bei einfachen Fragen oder Listenwünschen 1 bis maximal 2 Teilthemen!).
+    Formuliere pro Teilthema eine konkrete Leitfrage sowie bis zu {max_search_queries} präzise Suchanfragen.
+  deep_baseline_prompt: |-
+    Recherchiere aktuelle Kernfakten, Zahlen und Primärquellen zum Thema: {topic}
+    {focus_block}
+    Fasse die Ergebnisse knapp, strukturiert und ohne Fülltext zusammen.
+  deep_baseline_fallback_system_prompt: |-
+    Führe eine kompakte, faktenbasierte Vorabrecherche mit verifizierten Web-Quellen ohne Fülltext durch.
+  investigator_quick_system_prompt: |-
+    Du bist ein schneller Fakten-Analyst. Antworte extrem prägnant auf {language} mit aktuellen Web-Quellen ohne jeglichen Fülltext.
+    {style_rules}
+  investigator_quick_user_prompt: |-
+    Gesamtthema: {topic}
+    {focus_block}
+    Teilgebiet {subtopic_index}: {subtopic_title}
+    Leitfrage: {guiding_question}
+    Suchfokus: {search_queries}
+
+    Liefere maximal {max_subtopic_bullets} knackige Fakten-Stichpunkte mit konkreten Zahlen/Namen und direkt verlinkten Quellen `[Quellentitel](URL)`. Kein Einleitungstext, kein Fazit.
+  investigator_deep_system_prompt: |-
+    Du bist ein präziser Fakten-Analyst. Antworte auf {language}. Nutze Web-Suche aktiv, vermeide Spekulationen und belege Aussagen knapp mit konkreten Quellen.
+  investigator_deep_user_prompt: |-
+    Gesamtthema: {topic}
+    {focus_block}
+    Teilthema {subtopic_index}: {subtopic_title}
+    Leitfrage: {guiding_question}
+    Empfohlene Suchbegriffe: {search_queries}
+
+    Recherchiere aktuelle Fakten, konkrete Zahlen und Primärquellen im Web. Liefere bis zu {max_subtopic_bullets} dichte Fakten-Stichpunkte inklusive Quell-URLs ohne Prosa-Ballast.
+  investigator_consolidation_system_prompt: |-
+    Antworte präzise, kompakt und faktenbasiert auf {language} ohne Füllsätze.
+    {style_rules}
+  investigator_consolidation_user_prompt: |-
+    Thema: {topic}
+    {focus_block}
+    Teilgebiet: {subtopic_title}
+    Leitfrage: {guiding_question}
+    {baseline_section}
+    Gesammelte Web-Recherche-Notizen:
+    {evidence_notes}
+
+    Extrahierte Volltexte von Primärseiten:
+    {scraped_pages}
+
+    Verdichte die wichtigsten Erkenntnisse in maximal {max_subtopic_bullets} prägnante Stichpunkte (ggf. mit 1–2 Sätzen Einordnung) inklusive verlinkter Quellen `[Quellentitel](URL)`. Keine Redundanz, keine Floskeln.
+  investigator_followup_user_prompt: |-
+    Gesamtthema: {topic}
+    Teilgebiet: {subtopic_title}
+    Schließe gezielt und knapp folgende offene Fragen:
+    {open_questions}
+    Liefere nur belastbare Fakten und konkrete URLs in Stichpunkten.
+  synthesizer_system_prompt: |-
+    Du bist ein präziser Chef-Redakteur für kompakte, entscheidungsorientierte Briefings. Schreibe auf {language}.
+    Halte dich strikt an diese Redaktions- und Formatregeln:
+    {style_rules}
+    {format_override_rules}
+  synthesizer_user_prompt: |-
+    Thema des Auftrags: {topic}
+    Plan-Ziel: {objective_summary}
+    {focus_block}
+    Verbindliches Zielformat ({format_label}) & Umfangsrichtwert ({target_word_range}):
+    {format_instructions}
+    {baseline_section}
+    Erhobene Fakten aus {findings_count} untersuchten Teilgebieten:
+
+    {findings_digest}
+
+    Erstelle nun das Endergebnis:
+    1. `report_title`: Treffender, kurzer Titel.
+    2. `executive_summary`: 1 bis maximal 2 knackige Sätze Kernaussage (für Archiv-Vorschau).
+    3. `key_takeaways`: Maximal {max_takeaways} ultrakurze Fakten-Stichpunkte.
+    4. `body_markdown`: Der eigentliche Berichtsinhalt in sauberem Markdown (OHNE H1-Haupttitel und OHNE abschließendes Quellenverzeichnis, da beides automatisch ergänzt wird). Halte den Zielumfang ({target_word_range}) und eventuelle Listen-/Formatwünsche des Nutzers kompromisslos ein – behalte wichtige Inline-Links `[Quelle](URL)` bei!
+
+fallback_plan_templates:
+  de:
+    - title: "Kernfakten & Top-Ergebnisse"
+      guiding_question: "Was sind die wichtigsten verifizierten Fakten und Top-Optionen zu {topic}?"
+      search_queries:
+        - "{topic}"
+        - "{topic} Fakten Vergleich"
+    - title: "Kriterien, Daten & Einordnung"
+      guiding_question: "Welche konkreten Kennzahlen, Vor- und Nachteile gelten für {topic}?"
+      search_queries:
+        - "{topic} Vergleich Empfehlung"
+        - "{topic} Kriterien Daten"
+    - title: "Praxishinweise & Besonderheiten"
+      guiding_question: "Welche wichtigen Rahmenbedingungen oder Fallstricke sind bei {topic} zu beachten?"
+      search_queries:
+        - "{topic} Tipps Hinweise"
+        - "{topic} Risiken"
+  en:
+    - title: "Core Facts & Top Results"
+      guiding_question: "What are the most important verified facts and top options regarding {topic}?"
+      search_queries:
+        - "{topic}"
+        - "{topic} key facts comparison"
+    - title: "Criteria, Data & Comparison"
+      guiding_question: "What concrete metrics, pros, and cons apply to {topic}?"
+      search_queries:
+        - "{topic} comparison best options"
+        - "{topic} criteria metrics"
+    - title: "Practical Notes & Risks"
+      guiding_question: "What key constraints, risks, or practical tips apply to {topic}?"
+      search_queries:
+        - "{topic} tips guide"
+        - "{topic} risks"

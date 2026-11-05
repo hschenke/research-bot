@@ -9,6 +9,7 @@ import urllib.parse
 import markdown
 
 from src.config.constants import DEPTH_PROFILES
+from src.domain.domain_config import DomainConfig
 from src.domain.models import ResearchReport
 from src.security.auth import generate_readonly_token
 from src.security.sanitization import sanitize_display_url, sanitize_markdown_links
@@ -90,10 +91,16 @@ def _apply_inline_email_styles(body_html: str) -> str:
 def render_report_email_html(
     report: ResearchReport,
     app_report_url: str = "",
+    domain_config: DomainConfig | None = None,
 ) -> str:
     """Erstellt ein vollständiges, responsives HTML-Dokument für den Ergebnis-Versand."""
     safe_title = html.escape(report.title)
-    profile_label = html.escape(DEPTH_PROFILES[report.depth].label)
+    profile = (
+        domain_config.get_depth_profile(report.depth)
+        if domain_config is not None
+        else DEPTH_PROFILES[report.depth]
+    )
+    profile_label = html.escape(profile.label)
     duration_str = html.escape(format_duration_human(report.duration_seconds))
     sources_count = len(report.citations)
     body_html = _render_safe_markdown_html(report.content_markdown)

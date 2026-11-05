@@ -1,31 +1,33 @@
-"""Zentrale fachliche und technische Konstanten (keine Magic Values im Code)."""
+"""Zentrale technische Konstanten; sämtliche Fachlogik wird deklarativ aus `settings.yaml` geladen."""
 
+from src.config.domain_loader import load_default_domain_config
 from src.domain.enums import ResearchDepth
 from src.domain.models import DepthProfile
 
-# --- KI-Modelle & Agenten (gemäß aktuellem Google GenAI SDK >= 2.30.1) ---
-DEFAULT_MODEL: str = "gemini-3.5-flash-lite"
+_DEFAULT_DOMAIN = load_default_domain_config()
+
+# --- KI-Modelle & Agenten (Standardwerte aus config/settings.yaml, in Web-App editierbar) ---
+DEFAULT_MODEL: str = _DEFAULT_DOMAIN.default_model
 DEFAULT_FAST_MODEL: str = DEFAULT_MODEL
 DEFAULT_DEEP_MODEL: str = DEFAULT_MODEL
 FALLBACK_LITE_MODEL: str = DEFAULT_MODEL
 
-FALLBACK_AVAILABLE_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
+FALLBACK_AVAILABLE_MODELS: tuple[str, ...] = tuple(_DEFAULT_DOMAIN.available_models)
+CANDIDATE_FAST_MODELS: tuple[str, ...] = FALLBACK_AVAILABLE_MODELS
+CANDIDATE_DEEP_MODELS: tuple[str, ...] = FALLBACK_AVAILABLE_MODELS
 
-CANDIDATE_FAST_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
-CANDIDATE_DEEP_MODELS: tuple[str, ...] = (DEFAULT_MODEL,)
+DEEP_RESEARCH_AGENT_FAST: str = _DEFAULT_DOMAIN.depth_profiles[ResearchDepth.DEEP].deep_agent_name
+DEEP_RESEARCH_AGENT_MAX: str = _DEFAULT_DOMAIN.depth_profiles[ResearchDepth.EXHAUSTIVE].deep_agent_name
 
-DEEP_RESEARCH_AGENT_FAST: str = "deep-research-preview-04-2026"
-DEEP_RESEARCH_AGENT_MAX: str = "deep-research-max-preview-04-2026"
-
-# --- KI-Aufruf-Timeouts, Retries & Workload-Limits (großzügiger Headroom gegen Client-Timeouts) ---
-MIN_LLM_TIMEOUT_SECONDS: float = 15.0  # Absolutes Minimum für jeden KI-Aufruf
-LLM_QUICK_TIMEOUT_SECONDS: float = 60.0  # Großzügige Zeit auch bei schnellen Durchläufen
-LLM_FAST_TIMEOUT_SECONDS: float = 60.0  # 60s Zeitbudget für Standard-/Fast-Calls (gemini-3.5-flash-lite)
-LLM_DEFAULT_TIMEOUT_SECONDS: float = 120.0  # 120s für Tiefenrecherche & Gesamtberichts-Synthese
-MAX_STEP_ERROR_ATTEMPTS: int = 3  # Nach 3 Fehlversuchen Teilergebnis/Fallback
-LLM_PER_MODEL_RETRIES: int = 2  # Bis zu 3 Versuche (Initial + 2 Retries) auf dem Primärmodell
+# --- KI-Aufruf-Timeouts, Retries & Workload-Limits ---
+MIN_LLM_TIMEOUT_SECONDS: float = 15.0
+LLM_QUICK_TIMEOUT_SECONDS: float = 60.0
+LLM_FAST_TIMEOUT_SECONDS: float = 60.0
+LLM_DEFAULT_TIMEOUT_SECONDS: float = 120.0
+MAX_STEP_ERROR_ATTEMPTS: int = 3
+LLM_PER_MODEL_RETRIES: int = 2
 MODEL_SWITCH_PAUSE_SECONDS: float = 0.5
-QUICK_MAX_TOTAL_SECONDS: float = 300.0  # Ausreichend Zeitfenster ohne künstliches Drosseln
+QUICK_MAX_TOTAL_SECONDS: float = 300.0
 QUICK_RESUME_COOLDOWN_SECONDS: float = 1.0
 GROUNDING_QUOTA_COOLDOWN_SECONDS: float = 180.0
 
@@ -36,9 +38,9 @@ HEARTBEAT_INTERVAL_SECONDS: float = 15.0
 AUTO_RECOVERY_CHECK_INTERVAL_SECONDS: float = 30.0
 UI_LIVE_REFRESH_INTERVAL: str = "3s"
 
-# --- Parallelisierung von Teilthemen ---
-QUICK_PARALLEL_SUBTOPICS: int = 3
-STANDARD_PARALLEL_SUBTOPICS: int = 2
+# --- Parallelisierung von Teilthemen (aus settings.yaml abgeleitet) ---
+QUICK_PARALLEL_SUBTOPICS: int = _DEFAULT_DOMAIN.depth_profiles[ResearchDepth.QUICK].parallel_subtopics
+STANDARD_PARALLEL_SUBTOPICS: int = _DEFAULT_DOMAIN.depth_profiles[ResearchDepth.STANDARD].parallel_subtopics
 
 # --- Hintergrund-Interaktionen & Polling ---
 DEEP_AGENT_POLL_INTERVAL_SECONDS: float = 8.0
@@ -56,6 +58,7 @@ MAX_HTTP_REDIRECTS: int = 4
 MAX_WEB_PAGE_BYTES: int = 2_000_000  # 2 MB Obergrenze gegen Memory-Exhaustion
 MAX_EXTRACTED_CHARS_PER_PAGE: int = 10_000
 MAX_CANDIDATE_URL_PROBE_FACTOR: int = 2
+MAX_CONFIG_YAML_BYTES: int = 100_000
 ALLOWED_HTTP_PORTS: frozenset[int] = frozenset({80, 443})
 ALLOWED_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
@@ -69,10 +72,10 @@ DEFAULT_SQLITE_REL_PATH: str = "data/research_bot.db"
 SQLITE_BUSY_TIMEOUT_MS: int = 10_000
 TURSO_BATCH_SIZE: int = 40
 MAX_PROGRESS_LOG_ENTRIES: int = 60
-DEFAULT_STALE_JOB_MINUTES: int = 5
+DEFAULT_STALE_JOB_MINUTES: int = _DEFAULT_DOMAIN.stale_job_timeout_minutes
 DEFAULT_JOBS_LIST_LIMIT: int = 50
 DEFAULT_REPORTS_LIST_LIMIT: int = 50
-DEFAULT_MAX_CONCURRENT_LOCAL_JOBS: int = 4
+DEFAULT_MAX_CONCURRENT_LOCAL_JOBS: int = _DEFAULT_DOMAIN.max_concurrent_local_jobs
 
 # --- Security & Authentifizierung ---
 ADMIN_TOKEN_MAX_AGE_SECONDS: int = 86_400  # 24 Stunden
@@ -87,50 +90,5 @@ MAX_TOPIC_LENGTH: int = 300
 MAX_FOCUS_LENGTH: int = 2_000
 MAX_EMAIL_LENGTH: int = 254
 
-# --- Recherche-Tiefen-Profile (bewährter Standard-Workload) ---
-DEPTH_PROFILES: dict[ResearchDepth, DepthProfile] = {
-    ResearchDepth.QUICK: DepthProfile(
-        depth=ResearchDepth.QUICK,
-        label="⚡ Schnellüberblick",
-        estimated_duration_label="ca. 20–60 Sek.",
-        subtopic_count=3,
-        max_urls_per_subtopic=0,
-        followup_rounds=0,
-        use_deep_research_agent=False,
-        deep_agent_name="",
-        inter_step_pause_seconds=0.0,
-    ),
-    ResearchDepth.STANDARD: DepthProfile(
-        depth=ResearchDepth.STANDARD,
-        label="🔎 Standard-Recherche",
-        estimated_duration_label="ca. 3–8 Min.",
-        subtopic_count=6,
-        max_urls_per_subtopic=2,
-        followup_rounds=1,
-        use_deep_research_agent=False,
-        deep_agent_name="",
-        inter_step_pause_seconds=0.2,
-    ),
-    ResearchDepth.DEEP: DepthProfile(
-        depth=ResearchDepth.DEEP,
-        label="🧠 Tiefenrecherche",
-        estimated_duration_label="ca. 15–35 Min.",
-        subtopic_count=10,
-        max_urls_per_subtopic=4,
-        followup_rounds=1,
-        use_deep_research_agent=True,
-        deep_agent_name=DEEP_RESEARCH_AGENT_FAST,
-        inter_step_pause_seconds=0.8,
-    ),
-    ResearchDepth.EXHAUSTIVE: DepthProfile(
-        depth=ResearchDepth.EXHAUSTIVE,
-        label="🏛️ Marathon Deep-Dive (> 1 Std. möglich)",
-        estimated_duration_label="ca. 45–120+ Min.",
-        subtopic_count=15,
-        max_urls_per_subtopic=5,
-        followup_rounds=2,
-        use_deep_research_agent=True,
-        deep_agent_name=DEEP_RESEARCH_AGENT_MAX,
-        inter_step_pause_seconds=1.2,
-    ),
-}
+# --- Standard-Recherche-Tiefen-Profile (geladen aus config/settings.yaml) ---
+DEPTH_PROFILES: dict[ResearchDepth, DepthProfile] = _DEFAULT_DOMAIN.to_depth_profiles_map()

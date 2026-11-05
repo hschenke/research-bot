@@ -91,27 +91,51 @@ def create_fast_genai_client(api_key: str) -> genai.Client:
     return client
 
 
-def is_supported_generative_model(model_name: str) -> bool:
-    """Prüft, ob ein Modell das freigegebene Standard-Modell ist."""
-    cleaned = model_name.strip().lower()
-    return cleaned == DEFAULT_MODEL
+def is_supported_generative_model(
+    model_name: str,
+    allowed_models: list[str] | tuple[str, ...] | None = None,
+) -> bool:
+    """Prüft, ob ein Modell in der freigegebenen Modellliste enthalten ist."""
+    cleaned = model_name.strip()
+    allowed = list(allowed_models) if allowed_models else [DEFAULT_MODEL]
+    return cleaned in allowed
 
 
-def normalize_preferred_model(model_name: str) -> str:
-    """Ersetzt veraltete oder abweichende Modellnamen strikt durch `DEFAULT_MODEL`."""
-    _ = model_name
-    return DEFAULT_MODEL
+def normalize_preferred_model(
+    model_name: str,
+    allowed_models: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    """Validiert den gewünschten Modellnamen gegen die freigegebenen Modelle mit Fallback."""
+    cleaned = model_name.strip()
+    allowed = [m.strip() for m in (allowed_models or [DEFAULT_MODEL]) if m.strip()]
+    fallback = allowed[0] if allowed else DEFAULT_MODEL
+    return cleaned if cleaned in allowed else fallback
 
 
-def build_model_chain(preferred: str, defaults: tuple[str, ...]) -> list[str]:
-    """Liefert die Modellkette, strikt fokussiert auf `DEFAULT_MODEL`."""
-    _ = (preferred, defaults)
-    return [DEFAULT_MODEL]
+def build_model_chain(
+    preferred: str,
+    defaults: tuple[str, ...] | list[str],
+) -> list[str]:
+    """Erstellt eine deduplizierte Modell-Fallback-Kette mit dem Wunschmodell an erster Stelle."""
+    allowed = [m.strip() for m in defaults if m.strip()] or [DEFAULT_MODEL]
+    primary = normalize_preferred_model(preferred, allowed)
+    chain = [primary]
+    for candidate in allowed:
+        if candidate not in chain:
+            chain.append(candidate)
+    return chain
 
 
-def fetch_available_gemini_models(api_key: str = "") -> list[str]:
-    """Gibt ausschließlich das freigegebene Standard-Modell (`DEFAULT_MODEL`) zurück."""
+def fetch_available_gemini_models(
+    api_key: str = "",
+    allowed_models: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    """Gibt die konfigurierten freigegebenen KI-Modelle zurück."""
     _ = api_key
+    if allowed_models:
+        cleaned = [m.strip() for m in allowed_models if m.strip()]
+        if cleaned:
+            return cleaned
     return [DEFAULT_MODEL]
 
 

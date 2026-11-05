@@ -44,6 +44,7 @@ def map_row_to_job(row: dict[str, Any]) -> ResearchJob:
         topic=str(row["topic"]),
         focus_instructions=str(row.get("focus_instructions") or ""),
         depth=ResearchDepth(str(row.get("depth") or "standard")),
+        report_format=str(row.get("report_format") or "compact"),
         language=str(row.get("language") or "de"),
         notify_email=str(row.get("notify_email") or ""),
         model=str(row.get("model") or "gemini-3.5-flash-lite"),

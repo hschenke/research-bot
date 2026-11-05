@@ -53,6 +53,23 @@ def validate_email_address(raw_email: str) -> str:
 
 
 _MODEL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9\.\-_]+$")
+_FORMAT_KEY_PATTERN = re.compile(r"^[a-z0-9_]{2,40}$")
+
+
+def validate_model_identifier(raw_model: str, fallback: str = "gemini-3.5-flash-lite") -> str:
+    """Prüft einen KI-Modellnamen strikt gegen eine Zeichen-Positivliste."""
+    clean_model = strip_control_characters(raw_model).strip() or fallback
+    if len(clean_model) > 100 or not _MODEL_NAME_PATTERN.match(clean_model):
+        raise InputValidationError(f"Ungültiger Modellbezeichner: '{clean_model[:40]}'")
+    return clean_model
+
+
+def validate_format_key(raw_format: str, fallback: str = "compact") -> str:
+    """Validiert den Schlüssel eines Berichtsformats per Whitelist."""
+    clean_fmt = strip_control_characters(raw_format).strip().lower() or fallback
+    if not _FORMAT_KEY_PATTERN.match(clean_fmt):
+        raise InputValidationError("Ungültiger Berichtsformat-Schlüssel.")
+    return clean_fmt
 
 
 def validate_research_request(
@@ -62,6 +79,7 @@ def validate_research_request(
     language: str = "de",
     notify_email: str = "",
     model: str = "gemini-3.5-flash-lite",
+    report_format: str = "compact",
 ) -> ResearchRequest:
     """Validiert und bereinigt alle Eingabefelder für einen neuen Recherche-Auftrag."""
     clean_topic = strip_control_characters(topic).strip()
@@ -85,15 +103,14 @@ def validate_research_request(
         raise InputValidationError("Unterstützte Sprachen sind 'de' und 'en'.")
 
     clean_email = validate_email_address(notify_email)
-
-    clean_model = strip_control_characters(model).strip() or "gemini-3.5-flash-lite"
-    if len(clean_model) > 100 or not _MODEL_NAME_PATTERN.match(clean_model):
-        raise InputValidationError("Ungültiger Modellbezeichner.")
+    clean_model = validate_model_identifier(model)
+    clean_format = validate_format_key(report_format)
 
     return ResearchRequest(
         topic=clean_topic,
         focus_instructions=clean_focus,
         depth=depth,
+        report_format=clean_format,
         language=clean_lang,
         notify_email=clean_email,
         model=clean_model,

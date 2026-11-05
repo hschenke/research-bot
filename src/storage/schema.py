@@ -7,6 +7,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         topic TEXT NOT NULL,
         focus_instructions TEXT NOT NULL DEFAULT '',
         depth TEXT NOT NULL DEFAULT 'standard',
+        report_format TEXT NOT NULL DEFAULT 'compact',
         language TEXT NOT NULL DEFAULT 'de',
         notify_email TEXT NOT NULL DEFAULT '',
         model TEXT NOT NULL DEFAULT 'gemini-3.5-flash-lite',
@@ -42,6 +43,13 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         model_used TEXT NOT NULL DEFAULT '',
         duration_seconds INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS app_domain_config (
+        config_key TEXT PRIMARY KEY,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON research_jobs(status, created_at DESC);",

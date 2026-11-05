@@ -8,7 +8,8 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.config.constants import QUICK_PARALLEL_SUBTOPICS, STANDARD_PARALLEL_SUBTOPICS
+from src.config.domain_loader import load_default_domain_config
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import JobPhase, ResearchDepth
 from src.domain.exceptions import JobCancelledError, ResearchBotError
 from src.domain.models import (
@@ -27,13 +28,16 @@ from src.storage.base_repository import ResearchRepository
 logger = logging.getLogger(__name__)
 
 
-def resolve_subtopic_parallelism(depth: ResearchDepth) -> int:
-    """Bestimmt die optimale Anzahl paralleler Teilthemen-Worker pro Recherche-Tiefe."""
-    if depth == ResearchDepth.QUICK:
-        return QUICK_PARALLEL_SUBTOPICS
-    if depth == ResearchDepth.STANDARD:
-        return STANDARD_PARALLEL_SUBTOPICS
-    return 2
+def resolve_subtopic_parallelism(
+    depth: ResearchDepth,
+    profile: DepthProfile | None = None,
+    domain_config: DomainConfig | None = None,
+) -> int:
+    """Bestimmt die konfigurierte Anzahl paralleler Teilthemen-Worker pro Recherche-Tiefe."""
+    if profile is not None:
+        return max(1, profile.parallel_subtopics)
+    cfg = domain_config or load_default_domain_config()
+    return max(1, cfg.get_depth_profile(depth).parallel_subtopics)
 
 
 def _scope_gateway_for_subtopic(
@@ -57,8 +61,10 @@ def execute_subtopics_batch(
     check_alive: Callable[[], None],
     allow_partial_on_error: bool = False,
     deadline_monotonic: float | None = None,
+    domain_config: DomainConfig | None = None,
 ) -> list[SubTopicFinding]:
     """Verarbeitet offene Teilthemen parallel mit Live-Aktionsanzeige und Teilergebnis-Schutz."""
+    cfg = domain_config or load_default_domain_config()
     completed: dict[int, SubTopicFinding] = {f.subtopic_index: f for f in existing_findings}
     total = max(1, len(plan.subtopics))
     pending = [st for st in plan.subtopics if st.index not in completed]
@@ -66,7 +72,7 @@ def execute_subtopics_batch(
         return [completed[idx] for idx in sorted(completed)]
 
     check_alive()
-    workers = min(resolve_subtopic_parallelism(job.depth), len(pending))
+    workers = min(resolve_subtopic_parallelism(job.depth, profile, cfg), len(pending))
     first_live = f"[Teilgebiet {pending[0].index}/{total}] 🔎 Starte Recherche zu »{pending[0].title[:45]}«..."
     repository.update_progress(
         job_id=job.id,
@@ -103,6 +109,7 @@ def execute_subtopics_batch(
             baseline_excerpt=baseline_markdown,
             on_heartbeat=check_alive,
             on_action=_on_sub_action,
+            domain_config=cfg,
         )
 
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="subtopic") as pool:
@@ -138,7 +145,7 @@ def execute_subtopics_batch(
                     next(iter(active_actions.values()))
                     if active_actions
                     else (
-                        "Alle Teilgebiete erhoben – starte Berichts-Synthese..."
+                        "Alle Teilgebiete erhoben – starte kompakte Berichts-Synthese..."
                         if len(completed) >= total
                         else f"Bereite nächstes Teilgebiet ({len(completed) + 1}/{total}) vor..."
                     )

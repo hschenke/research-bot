@@ -6,8 +6,10 @@ from datetime import datetime
 
 import streamlit as st
 
-from src.config.constants import DEFAULT_MODEL, DEPTH_PROFILES, UI_LIVE_REFRESH_INTERVAL
+from src.config.constants import UI_LIVE_REFRESH_INTERVAL
+from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import AuthRole, JobStatus
 from src.domain.models import ResearchJob
 from src.notifications.email_renderer import format_duration_human
@@ -32,19 +34,22 @@ def render_active_jobs_view(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
+    domain_config: DomainConfig | None = None,
 ) -> None:
     """Zeigt aktive Jobs; schaltet Auto-Refresh nur ein, wenn tatsächlich Jobs aktiv sind."""
+    cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
     active_count = repository.count_jobs(statuses=ACTIVE_JOB_STATUSES)
     if active_count > 0:
-        _render_live_jobs_fragment(settings=settings, repository=repository, role=role)
+        _render_live_jobs_fragment(settings=settings, repository=repository, role=role, cfg=cfg)
     else:
-        _render_idle_jobs_view(settings=settings, repository=repository, role=role)
+        _render_idle_jobs_view(settings=settings, repository=repository, role=role, cfg=cfg)
 
 
 def _render_idle_jobs_view(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
+    cfg: DomainConfig,
 ) -> None:
     """Rendert die Ruheansicht ohne periodische Polling-WebSockets (verhindert 2s-Flackern)."""
     dispatcher = JobDispatcher(settings)
@@ -65,7 +70,7 @@ def _render_idle_jobs_view(
     )
     if recent_finished:
         _render_recent_finished_section(
-            recent_finished, settings, repository, dispatcher, role, has_active=False
+            recent_finished, settings, repository, dispatcher, role, cfg, has_active=False
         )
 
 
@@ -74,6 +79,7 @@ def _render_live_jobs_fragment(
     settings: AppSettings,
     repository: ResearchRepository,
     role: AuthRole,
+    cfg: DomainConfig,
 ) -> None:
     """Rendert die Live-Aktualisierung (alle 3s) ausschließlich bei aktiven Jobs."""
     dispatcher = JobDispatcher(settings)
@@ -100,6 +106,7 @@ def _render_live_jobs_fragment(
             repository=repository,
             dispatcher=dispatcher,
             role=role,
+            cfg=cfg,
         )
 
     recent_finished = repository.list_jobs(
@@ -108,7 +115,7 @@ def _render_live_jobs_fragment(
     )
     if recent_finished:
         _render_recent_finished_section(
-            recent_finished, settings, repository, dispatcher, role, has_active=True
+            recent_finished, settings, repository, dispatcher, role, cfg, has_active=True
         )
 
 
@@ -118,6 +125,7 @@ def _render_recent_finished_section(
     repository: ResearchRepository,
     dispatcher: JobDispatcher,
     role: AuthRole,
+    cfg: DomainConfig,
     has_active: bool,
 ) -> None:
     """Zeigt die letzten bis zu 10 Recherchen mit schlanker Status-, Laufzeit- und Modellzeile."""
@@ -143,6 +151,7 @@ def _render_recent_finished_section(
                 repository=repository,
                 dispatcher=dispatcher,
                 role=role,
+                cfg=cfg,
             )
 
 
@@ -167,10 +176,18 @@ def _render_recent_job_card(
     repository: ResearchRepository,
     dispatcher: JobDispatcher,
     role: AuthRole,
+    cfg: DomainConfig,
 ) -> None:
     """Rendert eine kompakte Karte für vergangene Recherchen ohne Anzeige der internen ID."""
-    profile = DEPTH_PROFILES[job.depth]
-    job_model = normalize_preferred_model(getattr(job, "model", None) or DEFAULT_MODEL)
+    _ = dispatcher
+    profile = cfg.get_depth_profile(job.depth)
+    job_model = normalize_preferred_model(
+        getattr(job, "model", None) or cfg.default_model,
+        allowed_models=cfg.available_models,
+    )
+    _fmt_key, fmt_preset = cfg.resolve_effective_format(
+        job.topic, job.focus_instructions, getattr(job, "report_format", "compact")
+    )
     date_str = format_datetime_german(job.created_at)
     is_completed = job.status == JobStatus.COMPLETED
     completed_str = "Abgeschlossen: Ja" if is_completed else "Abgeschlossen: Nein"
@@ -181,7 +198,7 @@ def _render_recent_job_card(
         with col_main:
             st.markdown(f"**{job.topic}**")
             st.caption(
-                f"{date_str} · {completed_str} · Laufzeit: {duration_str} · {profile.label} · 🤖 `{job_model}`"
+                f"{date_str} · {completed_str} · Laufzeit: {duration_str} · {profile.label} · {fmt_preset.label} · 🤖 `{job_model}`"
             )
         with col_actions:
             _render_finished_job_actions(
@@ -243,18 +260,25 @@ def _render_active_job_card(
     repository: ResearchRepository,
     dispatcher: JobDispatcher,
     role: AuthRole,
+    cfg: DomainConfig,
 ) -> None:
     """Rendert die Live-Karte eines aktuell laufenden Auftrags ohne Anzeige der internen ID."""
-    profile = DEPTH_PROFILES[job.depth]
+    profile = cfg.get_depth_profile(job.depth)
     badge = _STATUS_BADGES.get(job.status, job.status.value)
-    job_model = normalize_preferred_model(getattr(job, "model", None) or DEFAULT_MODEL)
+    job_model = normalize_preferred_model(
+        getattr(job, "model", None) or cfg.default_model,
+        allowed_models=cfg.available_models,
+    )
+    _fmt_key, fmt_preset = cfg.resolve_effective_format(
+        job.topic, job.focus_instructions, getattr(job, "report_format", "compact")
+    )
     date_str = format_datetime_german(job.created_at)
 
     with st.container(border=True):
         top_left, top_right = st.columns([3.4, 1.6], vertical_alignment="center")
         with top_left:
             st.markdown(f"**{job.topic}**")
-            st.caption(f"{badge} · {date_str} · {profile.label} · 🤖 `{job_model}`")
+            st.caption(f"{badge} · {date_str} · {profile.label} · {fmt_preset.label} · 🤖 `{job_model}`")
         with top_right:
             if role == AuthRole.ADMIN:
                 _render_active_admin_actions(job, settings, repository, dispatcher)

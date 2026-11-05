@@ -73,7 +73,7 @@ def run_worker_cli(argv: list[str] | None = None) -> int:
             [args.job_id.strip()]
             if args.job_id.strip()
             else repo.find_claimable_job_ids(
-                stale_timeout_minutes=settings.stale_job_timeout_minutes,
+                stale_timeout_minutes=repo.get_domain_config().stale_job_timeout_minutes,
                 limit=max(1, args.max_jobs),
             )
         )

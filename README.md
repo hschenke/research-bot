@@ -66,16 +66,16 @@ research-bot/
 │   ├── config.toml                # Theme, XSRF-Schutz & sichere Server-Defaults
 │   └── secrets.toml.example       # Vorlage für Streamlit Cloud Secrets
 ├── config/
-│   └── settings.yaml              # Nicht-sensible Standardwerte
+│   └── settings.yaml              # Gesamte deklarative KI- & Fachlogik (Prompts, Stil, Formate, Profile, Limits)
 ├── src/
-│   ├── config/                    # Konstanten, Tiefen-Profile & typisierte AppSettings
-│   ├── domain/                    # Enums, Exception-Hierarchie & unveränderliche Modelle
-│   ├── security/                  # SSRF-Guard, Input-Sanitizer, HMAC-Auth & Rate-Limiter
-│   ├── storage/                   # SqlExecutor (SQLite & Turso) + SqlResearchRepository
+│   ├── config/                    # YAML-Domain-Loader, Konstanten & typisierte AppSettings
+│   ├── domain/                    # Enums, Exception-Hierarchie, DomainConfig & unveränderliche Modelle
+│   ├── security/                  # SSRF-Guard, Input-/YAML-Validator, HMAC-Auth & Rate-Limiter
+│   ├── storage/                   # SqlExecutor (SQLite & Turso) + SqlResearchRepository + DomainConfigStore
 │   ├── research/                  # Gemini Interactions API, WebFetcher, Planner, Investigator, Synthesizer, Orchestrator
 │   ├── worker/                    # GitHubActionsDispatcher, LocalBackgroundRunner & CLI-Worker
 │   ├── notifications/             # Responsiver HTML-Mail-Renderer & Resend/SMTP-Versand
-│   └── ui/                        # Schlanke Streamlit-Views (Live-Fragmente, Archiv, Diagnose)
+│   └── ui/                        # Schlanke Streamlit-Views inkl. Live-Editor für KI- & Fachlogik (`🎛️ KI- & Fachlogik`)
 ├── tests/                         # Umfassende Unit- & Integrationstests
 ├── streamlit_app.py               # Root-Entrypoint für Streamlit Cloud
 ├── requirements.txt               # Vollständige Abhängigkeiten (UI + Worker)

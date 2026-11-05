@@ -1,4 +1,4 @@
-"""Phase 3: Synthese aller Teil-Ergebnisse in einen strukturierten Gesamt- oder Teilbericht."""
+"""Phase 3: Konfigurierbare, redundanzfreie Berichts-Synthese (inkl. reinem Listen-Modus)."""
 
 from __future__ import annotations
 
@@ -8,178 +8,133 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-from src.domain.enums import ResearchDepth
+from src.config.domain_loader import load_default_domain_config, render_prompt_template
+from src.domain.domain_config import DomainConfig
 from src.domain.exceptions import JobCancelledError, ResearchBotError
 from src.domain.models import (
+    DepthProfile,
     ResearchJob,
     ResearchPlan,
     ResearchReport,
-    SourceCitation,
     SubTopicFinding,
 )
 from src.research.gemini_client import ResearchLLMGateway
-from src.security.sanitization import sanitize_display_url, sanitize_markdown_links
+from src.research.report_formatter import (
+    assemble_report_markdown,
+    build_fallback_body,
+    collect_unique_citations,
+)
+from src.security.sanitization import sanitize_markdown_links
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["collect_unique_citations", "synthesize_final_report"]
 
-class _ExecutiveSummarySchema(BaseModel):
-    report_title: str = Field(description="Aussagekräftiger Titel des finalen Forschungsberichts.")
+
+class _SynthesizedReportSchema(BaseModel):
+    report_title: str = Field(description="Treffender, kurzer Titel des Berichts.")
     executive_summary: str = Field(
-        description="Prägnante Management-Zusammenfassung (2 bis 3 Absätze) mit den Kernergebnissen."
+        description="1 bis maximal 2 knackige Sätze Kernaussage (für Archiv-Vorschau)."
     )
     key_takeaways: list[str] = Field(
-        description="5 bis 8 präzise Kernaussagen mit konkreten Fakten/Zahlen."
+        default_factory=list,
+        description="Prägnante Fakten-Stichpunkte.",
     )
-    synthesis_conclusion: str = Field(
-        description="Übergreifendes Fazit, strategische Einordnung sowie offene Punkte/Ausblick."
-    )
-
-
-def collect_unique_citations(findings: list[SubTopicFinding]) -> list[SourceCitation]:
-    """Sammelt alle verifizierten Quellen über sämtliche Teilthemen hinweg ohne Duplikate."""
-    unique: list[SourceCitation] = []
-    seen_urls: set[str] = set()
-    for finding in findings:
-        for citation in finding.citations:
-            safe_url = sanitize_display_url(citation.url)
-            if safe_url == "#" or safe_url in seen_urls:
-                continue
-            seen_urls.add(safe_url)
-            unique.append(
-                SourceCitation(
-                    url=safe_url,
-                    title=citation.title.strip() or safe_url,
-                    snippet=citation.snippet.strip(),
-                )
-            )
-    return unique
-
-
-def _build_sources_section(citations: list[SourceCitation], language: str) -> str:
-    """Erstellt ein nummeriertes Markdown-Quellenverzeichnis."""
-    heading = "## Verifizierte Web-Quellen" if language == "de" else "## Verified Web Sources"
-    if not citations:
-        empty_note = (
-            "_Keine externen Direkt-URLs extrahiert._"
-            if language == "de"
-            else "_No external direct URLs extracted._"
-        )
-        return f"{heading}\n\n{empty_note}"
-
-    lines = [heading, ""]
-    for idx, cite in enumerate(citations, start=1):
-        label = cite.title.replace("[", "(").replace("]", ")")
-        lines.append(f"{idx}. [{label}]({cite.url})")
-    return "\n".join(lines)
-
-
-def _build_partial_notice(plan: ResearchPlan, findings: list[SubTopicFinding], language: str) -> str:
-    """Erstellt einen transparenten Hinweisblock, falls aufgrund von Limits ein Teilergebnis vorliegt."""
-    total = len(plan.subtopics)
-    if total <= 0 or len(findings) >= total:
-        return ""
-    done_indices = {f.subtopic_index for f in findings}
-    skipped = [st.title for st in plan.subtopics if st.index not in done_indices]
-    skipped_str = ", ".join(skipped)
-    if language == "de":
-        return (
-            f"> **Hinweis (Teilergebnis):** Aufgrund von API-Ratenlimits oder Zeitbudget wurden "
-            f"**{len(findings)} von {total}** geplanten Teilgebieten ausgewertet"
-            + (f" (übersprungen: _{skipped_str}_)." if skipped_str else ".")
-        )
-    return (
-        f"> **Note (Partial Result):** Due to API quota or time budget limits, "
-        f"**{len(findings)} of {total}** planned subtopics were evaluated"
-        + (f" (skipped: _{skipped_str}_)." if skipped_str else ".")
+    body_markdown: str = Field(
+        default="",
+        description=(
+            "Fertiger, redundanzfreier Hauptinhalt in Markdown (ohne H1-Haupttitel und ohne "
+            "abschließendes Quellenverzeichnis). Setzt Listen- und Kürzewünsche strikt um."
+        ),
     )
 
 
-def _build_fallback_overview(
+def _build_fallback_synthesis(
     job: ResearchJob,
     plan: ResearchPlan,
     findings: list[SubTopicFinding],
-) -> _ExecutiveSummarySchema:
-    """Erstellt bei API-Spitzen sofort eine Zusammenfassung aus den bereits erhobenen Teilbefunden."""
+    max_takeaways: int,
+    omit_wrapper_sections: bool,
+) -> _SynthesizedReportSchema:
+    """Erstellt bei API-Spitzen eine kompakte Direkt-Synthese ohne unnötigen Prosa-Überbau."""
     takeaways: list[str] = []
     for finding in findings:
         for fact in finding.key_facts:
-            if fact.strip() and fact.strip() not in takeaways:
-                takeaways.append(fact.strip())
-            if len(takeaways) >= 8:
+            cleaned = fact.strip()
+            if cleaned and cleaned not in takeaways:
+                takeaways.append(cleaned)
+            if len(takeaways) >= max_takeaways:
                 break
-        if len(takeaways) >= 8:
+        if len(takeaways) >= max_takeaways:
             break
 
     if not takeaways:
-        takeaways = [f.title for f in findings[:6]]
+        takeaways = [f.title for f in findings[:max_takeaways]]
 
-    summary = plan.objective_summary.strip() or (
-        f"Strukturierte Übersicht zu '{job.topic}' über {len(findings)} untersuchte Teilbereiche."
-        if job.language == "de"
-        else f"Structured overview of '{job.topic}' across {len(findings)} researched areas."
-    )
-    conclusion = (
-        "Die detaillierten Analysen und Einzelquellen sind in den vorangehenden Fachkapiteln aufgeführt."
-        if job.language == "de"
-        else "Detailed analyses and verified sources are documented in the preceding chapters."
-    )
-    return _ExecutiveSummarySchema(
+    summary = plan.objective_summary.strip() or job.topic
+    body = build_fallback_body(findings, takeaways, omit_wrapper_sections)
+    return _SynthesizedReportSchema(
         report_title=plan.normalized_title.strip() or job.topic,
         executive_summary=summary,
         key_takeaways=takeaways,
-        synthesis_conclusion=conclusion,
+        body_markdown=body,
     )
 
 
-def _assemble_report_markdown(
-    overview: _ExecutiveSummarySchema,
+def _build_synthesis_prompts(
+    job: ResearchJob,
     plan: ResearchPlan,
     findings: list[SubTopicFinding],
-    citations: list[SourceCitation],
-    language: str,
-) -> str:
-    """Fügt Executive Summary, optionalen Teilergebnis-Hinweis, Kapitel, Fazit & Quellen zusammen."""
-    takeaways_heading = "## Zentrale Erkenntnisse" if language == "de" else "## Key Takeaways"
-    conclusion_heading = (
-        "## Übergreifendes Fazit & Ausblick" if language == "de" else "## Synthesis & Outlook"
+    baseline_markdown: str,
+    active_profile: DepthProfile,
+    cfg: DomainConfig,
+) -> tuple[str, str, bool]:
+    """Rendert System- und User-Prompt für die Berichts-Synthese aus `DomainConfig`."""
+    _fmt_key, fmt_preset = cfg.resolve_effective_format(
+        job.topic,
+        job.focus_instructions,
+        getattr(job, "report_format", "compact"),
     )
-    partial_notice = _build_partial_notice(plan, findings, language)
-
-    sections: list[str] = [f"# {overview.report_title.strip()}"]
-    if partial_notice:
-        sections.extend(["", partial_notice])
-    sections.extend(
-        [
-            "",
-            "## Executive Summary",
-            "",
-            overview.executive_summary.strip(),
-            "",
-            takeaways_heading,
-            "",
-        ]
+    lang_name = "Deutsch" if job.language == "de" else "US English"
+    max_f_chars = cfg.limits.max_finding_chars_in_synthesis
+    digest_blocks = [
+        f"### {f.subtopic_index}. {f.title}\nKernfakten: {'; '.join(f.key_facts)}\n{f.analysis_markdown[:max_f_chars]}"
+        for f in sorted(findings, key=lambda item: item.subtopic_index)
+    ]
+    max_b_chars = cfg.limits.max_baseline_chars_in_context
+    baseline_section = (
+        f"\nVoranalyse:\n{baseline_markdown[:max_b_chars]}\n" if baseline_markdown else ""
     )
-    for point in overview.key_takeaways:
-        if point.strip():
-            sections.append(f"- {point.strip()}")
-
-    for finding in sorted(findings, key=lambda item: item.subtopic_index):
-        sections.extend(
-            ["", f"## {finding.subtopic_index}. {finding.title}", "", finding.analysis_markdown.strip()]
-        )
-
-    sections.extend(
-        [
-            "",
-            conclusion_heading,
-            "",
-            overview.synthesis_conclusion.strip(),
-            "",
-            _build_sources_section(citations, language),
-        ]
+    focus_block = (
+        f"Spezifische Fokus- & Formatvorgaben des Nutzers:\n{job.focus_instructions.strip()}"
+        if job.focus_instructions.strip()
+        else "Keine zusätzlichen Freitext-Vorgaben."
     )
-    return sanitize_markdown_links("\n".join(sections).strip())
+
+    sys_prompt = render_prompt_template(
+        cfg.prompts.synthesizer_system_prompt,
+        {
+            "language": lang_name,
+            "style_rules": cfg.style.global_style_rules,
+            "format_override_rules": cfg.style.format_override_rules,
+        },
+    )
+    user_prompt = render_prompt_template(
+        cfg.prompts.synthesizer_user_prompt,
+        {
+            "topic": job.topic,
+            "objective_summary": plan.objective_summary,
+            "focus_block": focus_block,
+            "format_label": fmt_preset.label,
+            "format_instructions": fmt_preset.instructions,
+            "target_word_range": active_profile.target_word_range,
+            "baseline_section": baseline_section,
+            "findings_count": len(findings),
+            "findings_digest": "\n\n".join(digest_blocks),
+            "max_takeaways": cfg.limits.max_takeaways_count,
+        },
+    )
+    return sys_prompt, user_prompt, fmt_preset.omit_wrapper_sections
 
 
 def synthesize_final_report(
@@ -191,54 +146,61 @@ def synthesize_final_report(
     model_used: str,
     duration_seconds: int,
     on_action: Callable[[str], None] | None = None,
+    profile: DepthProfile | None = None,
+    domain_config: DomainConfig | None = None,
 ) -> ResearchReport:
-    """Erstellt aus allen Checkpoints den vollständigen oder teilweisen `ResearchReport`."""
-    lang_name = "Deutsch" if job.language == "de" else "US English"
+    """Synthetisiert alle Teilbefunde in einen knackigen, formatgetreuen `ResearchReport`."""
+    cfg = domain_config or load_default_domain_config()
+    active_profile = profile or cfg.get_depth_profile(job.depth)
     citations = collect_unique_citations(findings)
-    digest_blocks = [
-        f"### {f.subtopic_index}. {f.title}\nKernfakten: {'; '.join(f.key_facts)}\n{f.analysis_markdown[:2500]}"
-        for f in findings
-    ]
-    baseline_hint = f"\nÜbergreifende Voranalyse:\n{baseline_markdown[:3000]}\n" if baseline_markdown else ""
-
-    prompt = (
-        f"Thema des Forschungsauftrags: {job.topic}\nZielsetzung: {plan.objective_summary}\n"
-        f"{baseline_hint}\nErgebnisse der {len(findings)} untersuchten Teilgebiete:\n\n"
-        + "\n\n".join(digest_blocks)
-        + "\n\nErstelle Titel, Executive Summary, prägnante Key Takeaways sowie ein fundiertes Gesamtfazit."
+    sys_prompt, user_prompt, omit_wrapper = _build_synthesis_prompts(
+        job, plan, findings, baseline_markdown, active_profile, cfg
     )
 
-    use_deep = job.depth in {ResearchDepth.DEEP, ResearchDepth.EXHAUSTIVE}
     if on_action is not None:
-        on_action("✍️ Formuliere Executive Summary, Kernaussagen & Gesamtfazit...")
+        on_action("✍️ Verdichte Ergebnisse in einen kompakten, präzisen Bericht...")
 
     try:
-        overview = gateway.generate_structured(
-            prompt=prompt,
-            system_instruction=(
-                f"Du bist Chefredakteur für wissenschaftliche und strategische Dossiers. "
-                f"Schreibe klar, sachlich, ohne Werbefloskeln auf {lang_name}."
-            ),
-            schema_cls=_ExecutiveSummarySchema,
-            prefer_deep=use_deep,
+        synthesized = gateway.generate_structured(
+            prompt=user_prompt,
+            system_instruction=sys_prompt,
+            schema_cls=_SynthesizedReportSchema,
+            prefer_deep=active_profile.prefer_deep_model,
         )
     except JobCancelledError:
         raise
     except ResearchBotError as exc:
-        logger.warning("Synthese-Aufruf fehlgeschlagen (%s) – erstelle Fallback-Zusammenfassung.", exc)
+        logger.warning("Synthese-Aufruf fehlgeschlagen (%s) – nutze kompakten Fallback.", exc)
         if on_action is not None:
-            on_action("📋 Erstelle Direkt-Zusammenfassung aus erhobenen Teilbefunden...")
-        overview = _build_fallback_overview(job, plan, findings)
+            on_action("📋 Erstelle kompakte Direkt-Zusammenfassung aus Teilbefunden...")
+        synthesized = _build_fallback_synthesis(
+            job=job,
+            plan=plan,
+            findings=findings,
+            max_takeaways=cfg.limits.max_takeaways_count,
+            omit_wrapper_sections=omit_wrapper,
+        )
 
-    full_markdown = _assemble_report_markdown(overview, plan, findings, citations, job.language)
+    full_markdown = assemble_report_markdown(
+        report_title=synthesized.report_title.strip() or plan.normalized_title,
+        body_markdown=synthesized.body_markdown,
+        key_takeaways=synthesized.key_takeaways,
+        plan=plan,
+        findings=findings,
+        citations=citations,
+        language=job.language,
+        cfg=cfg,
+        omit_wrapper_sections=omit_wrapper,
+    )
+    max_tk = cfg.limits.max_takeaways_count
     return ResearchReport(
         job_id=job.id,
-        title=overview.report_title.strip() or plan.normalized_title,
+        title=synthesized.report_title.strip() or plan.normalized_title,
         topic=job.topic,
         depth=job.depth,
         language=job.language,
-        executive_summary=sanitize_markdown_links(overview.executive_summary.strip()),
-        key_takeaways=[t.strip() for t in overview.key_takeaways if t.strip()],
+        executive_summary=sanitize_markdown_links(synthesized.executive_summary.strip()),
+        key_takeaways=[t.strip() for t in synthesized.key_takeaways[:max_tk] if t.strip()],
         content_markdown=full_markdown,
         citations=citations,
         model_used=model_used,

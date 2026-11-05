@@ -24,8 +24,7 @@ def render_depth_profiles_tab(
         updated_depths: dict[ResearchDepth, DepthProfileConfig] = {}
         for depth in ResearchDepth:
             prof = cfg.depth_profiles[depth]
-            expanded = depth in {ResearchDepth.QUICK, ResearchDepth.STANDARD}
-            with st.expander(f"{prof.label} (`{depth.value}`)", expanded=expanded):
+            with st.expander(f"{prof.label} (`{depth.value}`)", expanded=False):
                 updated_depths[depth] = _render_single_depth_inputs(depth, prof, is_admin)
 
         saved = st.form_submit_button(
@@ -102,56 +101,56 @@ def render_app_and_limits_tab(
     lim = cfg.limits
 
     with st.form("form_app_and_limits", clear_on_submit=False):
-        c1, c2 = st.columns(2)
-        with c1:
-            models_raw = st.text_input(
-                "Freigegebene KI-Modelle (kommagetrennt)",
-                value=", ".join(cfg.available_models),
-                disabled=not is_admin,
-            )
-            def_model = st.text_input("Standard-KI-Modell", value=cfg.default_model, disabled=not is_admin)
-            def_lang = st.selectbox(
-                "Standard-Sprache",
-                options=["de", "en"],
-                index=0 if cfg.default_language == "de" else 1,
-                disabled=not is_admin,
-            )
-        with c2:
-            def_depth = st.selectbox(
-                "Standard-Recherche-Tiefe",
-                options=depth_opts,
-                index=depth_opts.index(cfg.default_depth),
-                format_func=lambda d: cfg.depth_profiles[d].label,
-                disabled=not is_admin,
-            )
-            def_fmt = st.selectbox(
-                "Standard-Berichtsformat",
-                options=fmt_keys,
-                index=fmt_keys.index(cfg.default_report_format) if cfg.default_report_format in fmt_keys else 0,
-                format_func=lambda k: cfg.report_formats[k].label,
-                disabled=not is_admin,
-            )
-            en_agent = st.checkbox(
-                "Autonomen Deep-Research-Agent global erlauben",
-                value=cfg.enable_deep_research_agent,
-                disabled=not is_admin,
-            )
+        with st.expander("🎯 Standard-Vorgaben & Freigaben (Modelle, Format, Tiefe, Sprache)", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                models_raw = st.text_input(
+                    "Freigegebene KI-Modelle (kommagetrennt)",
+                    value=", ".join(cfg.available_models),
+                    disabled=not is_admin,
+                )
+                def_model = st.text_input("Standard-KI-Modell", value=cfg.default_model, disabled=not is_admin)
+                def_lang = st.selectbox(
+                    "Standard-Sprache",
+                    options=["de", "en"],
+                    index=0 if cfg.default_language == "de" else 1,
+                    disabled=not is_admin,
+                )
+            with c2:
+                def_depth = st.selectbox(
+                    "Standard-Recherche-Tiefe",
+                    options=depth_opts,
+                    index=depth_opts.index(cfg.default_depth),
+                    format_func=lambda d: cfg.depth_profiles[d].label,
+                    disabled=not is_admin,
+                )
+                def_fmt = st.selectbox(
+                    "Standard-Berichtsformat",
+                    options=fmt_keys,
+                    index=fmt_keys.index(cfg.default_report_format) if cfg.default_report_format in fmt_keys else 0,
+                    format_func=lambda k: cfg.report_formats[k].label,
+                    disabled=not is_admin,
+                )
+                en_agent = st.checkbox(
+                    "Autonomen Deep-Research-Agent global erlauben",
+                    value=cfg.enable_deep_research_agent,
+                    disabled=not is_admin,
+                )
 
-        st.divider()
-        st.markdown("**Kontext-, Scraping- & Worker-Grenzen**")
-        l1, l2, l3, l4 = st.columns(4)
-        with l1:
-            max_sq = st.number_input("Max. Suchanfragen/Teil", 1, 8, lim.max_search_queries_per_subtopic, disabled=not is_admin)
-            max_tk = st.number_input("Max. Key-Takeaways", 1, 12, lim.max_takeaways_count, disabled=not is_admin)
-        with l2:
-            max_oq = st.number_input("Max. Follow-up-Fragen", 1, 5, lim.max_open_questions_per_followup, disabled=not is_admin)
-            max_loc = st.number_input("Max. lokale Worker-Jobs", 1, 16, cfg.max_concurrent_local_jobs, disabled=not is_admin)
-        with l3:
-            max_pg = st.number_input("Zeichen/Webseite", 500, 15000, lim.max_chars_per_scraped_page, step=250, disabled=not is_admin)
-            stale_m = st.number_input("Watchdog-Timeout (Min.)", 1, 180, cfg.stale_job_timeout_minutes, disabled=not is_admin)
-        with l4:
-            max_fc = st.number_input("Zeichen/Teil in Synthese", 300, 10000, lim.max_finding_chars_in_synthesis, step=100, disabled=not is_admin)
-            max_bc = st.number_input("Zeichen Baseline-Kontext", 300, 10000, lim.max_baseline_chars_in_context, step=100, disabled=not is_admin)
+        with st.expander("⚙️ Kontext-, Scraping- & Worker-Grenzen", expanded=False):
+            l1, l2, l3, l4 = st.columns(4)
+            with l1:
+                max_sq = st.number_input("Max. Suchanfragen/Teil", 1, 8, lim.max_search_queries_per_subtopic, disabled=not is_admin)
+                max_tk = st.number_input("Max. Key-Takeaways", 1, 12, lim.max_takeaways_count, disabled=not is_admin)
+            with l2:
+                max_oq = st.number_input("Max. Follow-up-Fragen", 1, 5, lim.max_open_questions_per_followup, disabled=not is_admin)
+                max_loc = st.number_input("Max. lokale Worker-Jobs", 1, 16, cfg.max_concurrent_local_jobs, disabled=not is_admin)
+            with l3:
+                max_pg = st.number_input("Zeichen/Webseite", 500, 15000, lim.max_chars_per_scraped_page, step=250, disabled=not is_admin)
+                stale_m = st.number_input("Watchdog-Timeout (Min.)", 1, 180, cfg.stale_job_timeout_minutes, disabled=not is_admin)
+            with l4:
+                max_fc = st.number_input("Zeichen/Teil in Synthese", 300, 10000, lim.max_finding_chars_in_synthesis, step=100, disabled=not is_admin)
+                max_bc = st.number_input("Zeichen Baseline-Kontext", 300, 10000, lim.max_baseline_chars_in_context, step=100, disabled=not is_admin)
 
         saved = st.form_submit_button(
             "💾 App-Einstellungen & Limits speichern",

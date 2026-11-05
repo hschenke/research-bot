@@ -308,3 +308,82 @@ def test_web_app_renders_and_saves_editable_domain_logic(tmp_path: Path) -> None
         assert repo.has_custom_domain_config() is False
 
     repo.close()
+
+
+def test_new_research_form_uses_configured_email_without_ui_input(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_email_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+        email_to="fest.definiert@example.com",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.new_research_view.fetch_available_gemini_models", lambda _k, **_kw: ["gemini-3.5-flash-lite"])
+        mp.setattr("src.ui.views.new_research_view.JobDispatcher.dispatch", lambda *_a, **_kw: "Turbo")
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        at = AppTest.from_function(_entry).run()
+        assert not at.exception
+
+        # Es darf kein manuelles E-Mail-Eingabefeld mehr im Formular existieren
+        email_inputs = [i for i in at.text_input if "E-Mail" in i.label]
+        assert len(email_inputs) == 0
+
+        # Formular absenden
+        topic_input = [inp for inp in at.text_input if "Recherche-Thema" in inp.label][0]
+        topic_input.set_value("Recherche ohne Email-Inputfeld")
+        submit_btn = [btn for btn in at.button if "Recherche im Hintergrund starten" in btn.label][0]
+        submit_btn.click().run()
+        assert not at.exception
+
+        # Erstellter Job muss automatisch die konfigurierte Zieladresse tragen
+        jobs = repo.list_jobs(limit=1)
+        assert len(jobs) == 1
+        assert jobs[0].notify_email == "fest.definiert@example.com"
+
+    repo.close()
+
+
+def test_domain_config_all_expanders_default_collapsed(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_expanders_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        at = AppTest.from_function(_entry).run()
+        assert not at.exception
+
+        at.session_state["main_navigation_tab"] = "🎛️ KI- & Fachlogik"
+        at.run()
+        assert not at.exception
+
+        # Alle Expander im Tab müssen initial zugeklappt sein
+        expanders = at.expander
+        assert len(expanders) > 0
+        for exp in expanders:
+            assert exp.proto.expanded is False
+
+    repo.close()

@@ -79,7 +79,7 @@ def render_new_research_view(
             max_chars=2000,
         )
 
-        col_fmt, col_depth, col_model = st.columns([1.2, 1.3, 1.0])
+        col_fmt, col_depth, col_model, col_lang = st.columns([1.2, 1.3, 1.0, 0.9])
         with col_fmt:
             selected_format = st.selectbox(
                 "📐 Berichtsformat & Stil",
@@ -106,21 +106,12 @@ def render_new_research_view(
                 index=default_model_idx,
                 help=f"Konfigurierbar in '🎛️ KI- & Fachlogik'. Standard: {cfg.default_model}.",
             )
-
-        col_lang, col_mail = st.columns([1, 2])
         with col_lang:
             selected_lang = st.selectbox(
-                "Berichtssprache",
+                "🌐 Berichtssprache",
                 options=["de", "en"],
                 index=0 if cfg.default_language == "de" else 1,
                 format_func=lambda code: "Deutsch" if code == "de" else "English",
-            )
-        with col_mail:
-            notify_email = st.text_input(
-                "📧 E-Mail bei Fertigstellung",
-                value=settings.email_to,
-                placeholder="name@beispiel.de",
-                help="Optionaler automatischer Versand des fertigen Berichts.",
             )
 
         submitted = st.form_submit_button(
@@ -141,7 +132,7 @@ def render_new_research_view(
         depth=selected_depth,
         report_format=selected_format,
         language=selected_lang,
-        notify_email=notify_email,
+        notify_email=settings.email_to,
         model=selected_model,
     )
 

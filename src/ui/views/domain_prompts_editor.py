@@ -33,7 +33,7 @@ def render_prompts_tab(
     p = domain_config.prompts
 
     with st.form("form_domain_prompts", clear_on_submit=False):
-        with st.expander("1️⃣ Phase 1: Recherche-Planer Prompts", expanded=True):
+        with st.expander("1️⃣ Phase 1: Recherche-Planer Prompts", expanded=False):
             planner_sys = st.text_area(
                 "Planer System-Instruktion (`planner_system_prompt`)",
                 value=p.planner_system_prompt,
@@ -105,7 +105,7 @@ def render_prompts_tab(
                 disabled=not is_admin,
             )
 
-        with st.expander("4️⃣ Phase 3: Berichts-Synthese Prompts", expanded=True):
+        with st.expander("4️⃣ Phase 3: Berichts-Synthese Prompts", expanded=False):
             s_sys = st.text_area(
                 "Synthese System-Instruktion (`synthesizer_system_prompt`)",
                 value=p.synthesizer_system_prompt,
@@ -205,12 +205,13 @@ def render_yaml_tab(
     )
 
     with st.form("form_domain_raw_yaml", clear_on_submit=False):
-        edited_yaml = st.text_area(
-            "Gesamtkonfiguration (YAML)",
-            value=yaml_str,
-            height=480,
-            disabled=not is_admin,
-        )
+        with st.expander("📄 YAML-Gesamtkonfiguration anzeigen & bearbeiten", expanded=False):
+            edited_yaml = st.text_area(
+                "Gesamtkonfiguration (YAML)",
+                value=yaml_str,
+                height=480,
+                disabled=not is_admin,
+            )
         submitted = st.form_submit_button(
             "💾 YAML validieren & speichern",
             type="primary",

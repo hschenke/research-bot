@@ -90,46 +90,46 @@ def _render_style_and_formats_tab(
     is_admin: bool,
 ) -> None:
     with st.form("form_style_and_formats", clear_on_submit=False):
-        st.markdown("**Globale Kürze- & Redaktionsregeln**")
-        global_rules = st.text_area(
-            "Allgemeine Stilregeln (`global_style_rules`)",
-            value=cfg.style.global_style_rules,
-            height=135,
-            disabled=not is_admin,
-        )
-        override_rules = st.text_area(
-            "Prioritätsregeln für Nutzer-Formatwünsche (`format_override_rules`)",
-            value=cfg.style.format_override_rules,
-            height=125,
-            disabled=not is_admin,
-        )
-        kw_raw = st.text_area(
-            "Schlüsselwörter für automatischen Knappe-Liste-Modus (komma- oder zeilengetrennt)",
-            value=", ".join(cfg.style.compact_list_keywords),
-            height=75,
-            disabled=not is_admin,
-        )
-
-        col_s1, col_s2, col_s3 = st.columns([1.2, 1.4, 1.4])
-        with col_s1:
-            inc_sources = st.checkbox(
-                "Quellenverzeichnis anhängen",
-                value=cfg.style.include_sources_section,
+        with st.expander("📝 Globale Kürze- & Redaktionsregeln", expanded=False):
+            global_rules = st.text_area(
+                "Allgemeine Stilregeln (`global_style_rules`)",
+                value=cfg.style.global_style_rules,
+                height=135,
                 disabled=not is_admin,
             )
-        with col_s2:
-            src_de = st.text_input("Quellen-Überschrift (DE)", value=cfg.style.sources_heading_de, disabled=not is_admin)
-        with col_s3:
-            src_en = st.text_input("Quellen-Überschrift (EN)", value=cfg.style.sources_heading_en, disabled=not is_admin)
+            override_rules = st.text_area(
+                "Prioritätsregeln für Nutzer-Formatwünsche (`format_override_rules`)",
+                value=cfg.style.format_override_rules,
+                height=125,
+                disabled=not is_admin,
+            )
+            kw_raw = st.text_area(
+                "Schlüsselwörter für automatischen Knappe-Liste-Modus (komma- oder zeilengetrennt)",
+                value=", ".join(cfg.style.compact_list_keywords),
+                height=75,
+                disabled=not is_admin,
+            )
 
-        part_de = st.text_input("Teilergebnis-Hinweis (DE)", value=cfg.style.partial_notice_de, disabled=not is_admin)
-        part_en = st.text_input("Teilergebnis-Hinweis (EN)", value=cfg.style.partial_notice_en, disabled=not is_admin)
+        with st.expander("📚 Quellenverzeichnis & Teilergebnis-Texte", expanded=False):
+            col_s1, col_s2, col_s3 = st.columns([1.2, 1.4, 1.4])
+            with col_s1:
+                inc_sources = st.checkbox(
+                    "Quellenverzeichnis anhängen",
+                    value=cfg.style.include_sources_section,
+                    disabled=not is_admin,
+                )
+            with col_s2:
+                src_de = st.text_input("Quellen-Überschrift (DE)", value=cfg.style.sources_heading_de, disabled=not is_admin)
+            with col_s3:
+                src_en = st.text_input("Quellen-Überschrift (EN)", value=cfg.style.sources_heading_en, disabled=not is_admin)
 
-        st.divider()
+            part_de = st.text_input("Teilergebnis-Hinweis (DE)", value=cfg.style.partial_notice_de, disabled=not is_admin)
+            part_en = st.text_input("Teilergebnis-Hinweis (EN)", value=cfg.style.partial_notice_en, disabled=not is_admin)
+
         st.markdown("**Auswählbare Berichtsformate (`report_formats`)**")
         updated_formats: dict[str, ReportFormatPreset] = {}
         for fmt_key, preset in cfg.report_formats.items():
-            with st.expander(f"Format `{fmt_key}` – {preset.label}", expanded=(fmt_key in {"compact", "list"})):
+            with st.expander(f"Format `{fmt_key}` – {preset.label}", expanded=False):
                 c1, c2, c3 = st.columns([2.2, 1.0, 1.2])
                 with c1:
                     lbl = st.text_input("Anzeigename", value=preset.label, disabled=not is_admin, key=f"dcfg_fmt_lbl_{fmt_key}")

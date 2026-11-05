@@ -32,12 +32,13 @@ def render_new_research_view(
     """Rendert das Eingabeformular mit Format-, Modell- und Tiefenauswahl aus `DomainConfig`."""
     cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
 
-    if st.session_state.pop("_new_job_started", False):
+    if st.session_state.get("_new_job_started", False):
         col_alert, col_btn = st.columns([3, 1], vertical_alignment="center")
         with col_alert:
-            st.success("Auftrag gestartet! [👉 Zum laufenden Job](?tab=jobs)")
+            st.success("Auftrag gestartet! Der Job läuft nun im Hintergrund.")
         with col_btn:
             if st.button("👉 Zum laufenden Job", type="primary", use_container_width=True, key="btn_jump_to_jobs"):
+                st.session_state.pop("_new_job_started", None)
                 st.session_state["_force_nav_tab"] = "jobs"
                 st.rerun()
 
@@ -169,7 +170,10 @@ def _handle_job_submission(
         job = repository.create_job(validated)
         dispatcher = JobDispatcher(settings)
         dispatcher.dispatch(job.id, depth=validated.depth)
-        st.session_state["_new_job_started"] = True
+        st.session_state["_force_nav_tab"] = "jobs"
+        st.session_state["_jobs_tab_flash"] = (
+            "✅ Recherche-Auftrag erfolgreich gestartet! Der Job läuft nun im Hintergrund."
+        )
         st.rerun()
     except InputValidationError as exc:
         st.error(f"Eingabefehler: {exc}")

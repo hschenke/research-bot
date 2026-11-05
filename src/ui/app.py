@@ -16,6 +16,7 @@ from src.ui.views.new_research_view import render_new_research_view
 from src.ui.views.reports_view import render_reports_view
 from src.ui.views.settings_view import render_settings_view
 
+MAIN_NAV_TAB_KEY: str = "main_navigation_tab"
 NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "rules", "settings")
 NAV_TAB_TITLES: tuple[str, ...] = (
     "🚀 Neue Recherche",
@@ -25,6 +26,7 @@ NAV_TAB_TITLES: tuple[str, ...] = (
     "⚙️ Systemstatus",
 )
 NAV_KEY_TO_TITLE: dict[str, str] = dict(zip(NAV_TAB_KEYS, NAV_TAB_TITLES, strict=True))
+TITLE_TO_NAV_KEY: dict[str, str] = {v: k for k, v in NAV_KEY_TO_TITLE.items()}
 
 
 @st.cache_resource
@@ -35,17 +37,42 @@ def _get_cached_repository(turso_url: str, sqlite_path: str) -> ResearchReposito
     return create_repository(settings, initialize=True)
 
 
-def _resolve_default_tab_title() -> str:
-    """Ermittelt den initial oder programmatisch ausgewählten Navigations-Tab."""
+def _sync_navigation_tab_state() -> str:
+    """Synchronisiert und steuert den aktiven Navigations-Tab (programmatisch oder via URL)."""
     forced_tab = st.session_state.pop("_force_nav_tab", None)
     if forced_tab in NAV_KEY_TO_TITLE:
-        return NAV_KEY_TO_TITLE[forced_tab]
+        target_title = NAV_KEY_TO_TITLE[forced_tab]
+        st.session_state[MAIN_NAV_TAB_KEY] = target_title
+        st.query_params["tab"] = forced_tab
+        st.session_state["_last_seen_qp_tab"] = forced_tab
+        return target_title
 
     requested_tab = str(st.query_params.get("tab", "") or "").lower()
-    if requested_tab in NAV_KEY_TO_TITLE:
-        return NAV_KEY_TO_TITLE[requested_tab]
+    last_qp = st.session_state.get("_last_seen_qp_tab")
+    if requested_tab in NAV_KEY_TO_TITLE and requested_tab != last_qp:
+        target_title = NAV_KEY_TO_TITLE[requested_tab]
+        st.session_state[MAIN_NAV_TAB_KEY] = target_title
+        st.session_state["_last_seen_qp_tab"] = requested_tab
+        return target_title
 
-    return NAV_TAB_TITLES[0]
+    if MAIN_NAV_TAB_KEY not in st.session_state:
+        initial_title = NAV_KEY_TO_TITLE.get(requested_tab, NAV_TAB_TITLES[0])
+        st.session_state[MAIN_NAV_TAB_KEY] = initial_title
+        if requested_tab in NAV_KEY_TO_TITLE:
+            st.session_state["_last_seen_qp_tab"] = requested_tab
+        return initial_title
+
+    current = st.session_state.get(MAIN_NAV_TAB_KEY)
+    if current not in NAV_TAB_TITLES:
+        current = NAV_TAB_TITLES[0]
+        st.session_state[MAIN_NAV_TAB_KEY] = current
+
+    active_key = TITLE_TO_NAV_KEY.get(str(current))
+    if active_key and st.query_params.get("tab") != active_key:
+        st.query_params["tab"] = active_key
+        st.session_state["_last_seen_qp_tab"] = active_key
+
+    return str(current)
 
 
 def run_streamlit_app() -> None:
@@ -74,10 +101,12 @@ def run_streamlit_app() -> None:
         "Prompts & Berichtsformaten direkt in der Web-App."
     )
 
-    default_tab_title = _resolve_default_tab_title()
+    default_tab_title = _sync_navigation_tab_state()
     tab_new, tab_jobs, tab_reports, tab_rules, tab_settings = st.tabs(
         list(NAV_TAB_TITLES),
         default=default_tab_title,
+        key=MAIN_NAV_TAB_KEY,
+        on_change="rerun",
     )
 
     with tab_new:

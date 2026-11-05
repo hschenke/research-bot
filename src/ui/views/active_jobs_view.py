@@ -37,6 +37,10 @@ def render_active_jobs_view(
     domain_config: DomainConfig | None = None,
 ) -> None:
     """Zeigt aktive Jobs; schaltet Auto-Refresh nur ein, wenn tatsächlich Jobs aktiv sind."""
+    flash_msg = st.session_state.pop("_jobs_tab_flash", None)
+    if flash_msg:
+        st.success(str(flash_msg))
+
     cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
     active_count = repository.count_jobs(statuses=ACTIVE_JOB_STATUSES)
     if active_count > 0:
@@ -225,12 +229,11 @@ def _render_finished_job_actions(
     if is_completed:
         col_view, col_del = st.columns([1.2, 1.0])
         with col_view:
-            st.markdown(
-                f"<a href='?tab=reports&job_id={job.id}' target='_self' style='text-decoration:none;'>"
-                f"<button style='width:100%; border:1px solid #ccc; border-radius:4px; padding:4px 8px; cursor:pointer;'>"
-                f"📄 Bericht</button></a>",
-                unsafe_allow_html=True,
-            )
+            if st.button("📄 Bericht", key=f"view_rep_{job.id}", use_container_width=True):
+                st.query_params["tab"] = "reports"
+                st.query_params["job_id"] = job.id
+                st.session_state["_force_nav_tab"] = "reports"
+                st.rerun()
         with col_del:
             if role == AuthRole.ADMIN and st.button(
                 "🗑️",

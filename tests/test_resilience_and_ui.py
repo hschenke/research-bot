@@ -19,7 +19,7 @@ from src.config.constants import (
 from src.config.settings import AppSettings
 from src.domain.enums import JobPhase, JobStatus, ResearchDepth
 from src.domain.exceptions import LLMProviderError
-from src.domain.models import ResearchRequest, SourceCitation
+from src.domain.models import ResearchReport, ResearchRequest, SourceCitation
 from src.research.gemini_client import GeminiInteractionsGateway, GroundedGeneration
 from src.research.llm_helpers import create_fast_genai_client
 from src.research.orchestrator import ResearchOrchestrator
@@ -225,12 +225,14 @@ def test_stop_and_resume_buttons_stay_on_active_jobs_tab(tmp_path: Path) -> None
         cancelled_job = repo.get_job(job.id)
         assert cancelled_job is not None
         assert cancelled_job.status == JobStatus.CANCELLED
+        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
 
         # Klick auf "🔁 Fortsetzen" (Auftrag wird erneut eingereiht)
         at.button(key=f"retry_{job.id}").click().run()
         resumed_job = repo.get_job(job.id)
         assert resumed_job is not None
         assert resumed_job.status == JobStatus.QUEUED
+        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
 
     repo.close()
 
@@ -310,4 +312,142 @@ def test_restored_workload_and_timeout_headroom() -> None:
     # Workload Profile auf bewährtem Standard
     assert DEPTH_PROFILES[ResearchDepth.STANDARD].subtopic_count == 6
     assert DEPTH_PROFILES[ResearchDepth.QUICK].subtopic_count == 3
+
+
+def test_job_submission_switches_to_active_jobs_tab_and_shows_flash(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_submit_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.new_research_view.fetch_available_gemini_models", lambda _k, **_kw: ["gemini-3.5-flash-lite"])
+        mp.setattr("src.ui.views.new_research_view.JobDispatcher.dispatch", lambda *_a, **_kw: "Turbo")
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        at = AppTest.from_function(_entry).run()
+        assert not at.exception
+        assert at.session_state["main_navigation_tab"] == "🚀 Neue Recherche"
+
+        # Formular ausfüllen und absenden
+        topic_input = [inp for inp in at.text_input if "Recherche-Thema" in inp.label][0]
+        topic_input.set_value("Test Thema für Job-Navigation")
+
+        submit_btn = [btn for btn in at.button if "Recherche im Hintergrund starten" in btn.label][0]
+        submit_btn.click().run()
+        assert not at.exception
+
+        # App muss sofort zum Tab '⏳ Laufende Jobs' gewechselt sein
+        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
+        assert at.query_params.get("tab") == "jobs"
+
+        # Flash-Meldung muss im Jobs-Tab sichtbar sein
+        success_boxes = [s.value for s in at.success]
+        assert any("erfolgreich gestartet" in s for s in success_boxes)
+
+    repo.close()
+
+
+def test_jump_to_jobs_fallback_button_has_no_broken_markdown_link(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_jump_btn_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.new_research_view.fetch_available_gemini_models", lambda _k, **_kw: ["gemini-3.5-flash-lite"])
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        at = AppTest.from_function(_entry)
+        at.session_state["_new_job_started"] = True
+        at.run()
+        assert not at.exception
+
+        # Sicherstellen, dass kein kaputter relativer Markdown-Link mehr im Success-Text steckt
+        for s in at.success:
+            assert "[👉 Zum laufenden Job]" not in s.value
+            assert "?tab=jobs" not in s.value
+
+        # Klick auf den Button '👉 Zum laufenden Job' wechselt zuverlässig den Tab
+        jump_btn = at.button(key="btn_jump_to_jobs")
+        assert jump_btn is not None
+        jump_btn.click().run()
+        assert not at.exception
+        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
+
+    repo.close()
+
+
+def test_completed_job_report_button_switches_to_reports_tab(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_report_btn_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+    job = repo.create_job(ResearchRequest(topic="Fertiger Test-Bericht", depth=ResearchDepth.QUICK))
+    repo.claim_job(job.id, worker_id="w1")
+    repo.mark_job_completed(
+        job.id,
+        report=ResearchReport(
+            job_id=job.id,
+            topic="Fertiger Test-Bericht",
+            title="Fertiger Test-Bericht",
+            executive_summary="Alles super.",
+            content_markdown="## Zusammenfassung\nAlles super.",
+            citations=[],
+            duration_seconds=12,
+            depth=ResearchDepth.QUICK,
+            language="de",
+            model_used="gemini-3.5-flash-lite",
+        ),
+    )
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.new_research_view.fetch_available_gemini_models", lambda _k, **_kw: ["gemini-3.5-flash-lite"])
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        at = AppTest.from_function(_entry).run()
+        assert not at.exception
+
+        # Klick auf "📄 Bericht" beim fertigen Job in der Liste
+        rep_btn = at.button(key=f"view_rep_{job.id}")
+        assert rep_btn is not None
+        rep_btn.click().run()
+        assert not at.exception
+
+        # Tab muss zu '📚 Ergebnisse & Archiv' gewechselt sein und job_id in den Query-Params gesetzt sein
+        assert at.session_state["main_navigation_tab"] == "📚 Ergebnisse & Archiv"
+        assert at.query_params.get("tab") == "reports"
+        assert at.query_params.get("job_id") == str(job.id)
+
+    repo.close()
 

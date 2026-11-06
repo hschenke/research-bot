@@ -331,10 +331,10 @@ class TestWebFetcherAndEmailSecurity:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("google.genai.Client", lambda api_key: MagicMock())
             gw = GeminiInteractionsGateway(settings)
-            assert gw._fast_chain == ["gemini-3.5-flash-lite"]
+            assert "gemini-3.5-flash-lite" in gw._fast_chain
 
-            custom_gw = gw.with_preferred_model("gemini-3.5-flash-lite")
-            assert custom_gw._fast_chain == ["gemini-3.5-flash-lite"]
+            custom_gw = gw.with_preferred_model("gemini-3.1-flash-lite")
+            assert custom_gw._fast_chain[0] == "gemini-3.1-flash-lite"
 
     def test_gateway_retries_transient_503_on_primary_model_and_skips_url_context_without_urls(
         self,

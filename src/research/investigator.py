@@ -124,7 +124,12 @@ def investigate_subtopic(
     """Untersucht ein Teilthema über Web-Grounding, optionalen Volltext-Abruf und Follow-ups."""
     cfg = domain_config or load_default_domain_config()
     lang_name = "Deutsch" if job.language == "de" else "US English"
-    if profile.max_urls_per_subtopic <= 0 and profile.followup_rounds <= 0:
+    routing = getattr(cfg, "model_routing", None)
+    is_single_pass = (
+        (profile.max_urls_per_subtopic <= 0 and profile.followup_rounds <= 0)
+        or (routing is not None and routing.single_pass_research)
+    )
+    if is_single_pass:
         return _investigate_quick_single_pass(
             gateway, job, subtopic, profile, cfg, lang_name, on_heartbeat
         )

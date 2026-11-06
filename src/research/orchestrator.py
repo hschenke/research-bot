@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from src.domain.models import DepthProfile, ResearchJob, ResearchPlan, ResearchR
 from src.research.gemini_client import ResearchLLMGateway
 from src.research.llm_helpers import is_quota_error, sleep_with_cancel_check
 from src.research.planner import create_research_plan, resolve_max_subtopics
+from src.research.rate_limiter import get_global_rate_limiter
 from src.research.subtopic_runner import execute_subtopics_batch
 from src.research.synthesizer import synthesize_final_report
 from src.research.web_fetcher import SafeWebFetcher
@@ -187,7 +189,16 @@ class ResearchOrchestrator:
         deadline_monotonic: float | None,
         domain_config: DomainConfig,
     ) -> ResearchLLMGateway:
-        job_model = getattr(job, "model", None) or domain_config.default_model
+        routing = getattr(domain_config, "model_routing", None)
+        if routing is not None:
+            get_global_rate_limiter().update_config(routing.max_rpm, routing.min_call_interval_seconds)
+
+        job_model = getattr(job, "model", None)
+        if not job_model and routing:
+            job_model = routing.research_primary_model
+        if not job_model:
+            job_model = domain_config.default_model
+
         if hasattr(self._llm, "with_preferred_model"):
             try:
                 return self._llm.with_preferred_model(
@@ -256,8 +267,17 @@ class ResearchOrchestrator:
             and self._settings.enable_deep_research_agent
             and domain_config.enable_deep_research_agent
         )
-        model_label = profile.deep_agent_name if use_agent else job_model
+        routing = getattr(domain_config, "model_routing", None)
+        synth_model = (
+            profile.deep_agent_name
+            if use_agent
+            else (routing.synthesizer_model if routing else job_model)
+        )
+        model_label = synth_model
         synth_llm = self._bind_gateway(job, deadline_monotonic=None, domain_config=domain_config)
+        if hasattr(synth_llm, "with_preferred_model") and not use_agent and routing:
+            with contextlib.suppress(TypeError):
+                synth_llm = synth_llm.with_preferred_model(synth_model)
         report = synthesize_final_report(
             gateway=synth_llm,
             job=refreshed_job,
@@ -294,7 +314,12 @@ class ResearchOrchestrator:
             message=f"Erstelle Recherche-Plan (bis zu {max_subtopics} Teilgebiete)...",
             live_status_override=f"🧠 Entwerfe schlanke Suchstrategie (max. {max_subtopics} Fokusfragen)...",
         )
-        plan = create_research_plan(gateway, job, profile, domain_config=domain_config)
+        routing = getattr(domain_config, "model_routing", None)
+        plan_gateway = gateway
+        if routing and hasattr(gateway, "with_preferred_model"):
+            with contextlib.suppress(TypeError):
+                plan_gateway = gateway.with_preferred_model(routing.planning_model)
+        plan = create_research_plan(plan_gateway, job, profile, domain_config=domain_config)
         self._check_alive(job.id)
         self._repo.save_plan_checkpoint(job.id, plan)
         return plan

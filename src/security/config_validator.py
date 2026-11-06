@@ -71,10 +71,21 @@ def validate_domain_config_payload(raw_data: dict[str, Any]) -> DomainConfig:
         if depth_cfg.deep_agent_name.strip():
             validate_model_identifier(depth_cfg.deep_agent_name.strip())
 
+    routing = config.model_routing
+    clean_routing = routing.model_copy(
+        update={
+            "planning_model": validate_model_identifier(routing.planning_model, fallback=default_model),
+            "research_primary_model": validate_model_identifier(routing.research_primary_model, fallback=default_model),
+            "research_fallback_model": validate_model_identifier(routing.research_fallback_model, fallback="gemini-3.1-flash-lite"),
+            "synthesizer_model": validate_model_identifier(routing.synthesizer_model, fallback=default_model),
+        }
+    )
+
     return config.model_copy(
         update={
             "available_models": cleaned_models,
             "default_model": default_model,
+            "model_routing": clean_routing,
         }
     )
 

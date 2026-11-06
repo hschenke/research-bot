@@ -123,6 +123,21 @@ class FallbackTemplatesConfig(BaseModel):
     en: list[FallbackSubtopicTemplate] = Field(min_length=1, max_length=10)
 
 
+class ModelRoutingConfig(BaseModel):
+    """Editierbare Routing-Strategie für KI-Modelle, Tools, Fallbacks und Rate-Limits."""
+
+    model_config = ConfigDict(frozen=True)
+
+    planning_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
+    research_primary_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
+    research_fallback_model: str = Field(default="gemini-3.1-flash-lite", min_length=1, max_length=100)
+    synthesizer_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
+    max_rpm: int = Field(default=12, ge=1, le=60)
+    min_call_interval_seconds: float = Field(default=4.5, ge=0.0, le=30.0)
+    single_pass_research: bool = True
+    enable_google_search: bool = True
+
+
 class DomainConfig(BaseModel):
     """Zentrales, in der Web-App sicht- und editierbares Fachlogik-Objekt."""
 
@@ -132,11 +147,12 @@ class DomainConfig(BaseModel):
     default_depth: ResearchDepth = Field(default=ResearchDepth.STANDARD)
     default_report_format: str = Field(default="compact", min_length=1, max_length=40)
     default_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
-    available_models: list[str] = Field(default_factory=lambda: ["gemini-3.5-flash-lite"], min_length=1)
+    available_models: list[str] = Field(default_factory=lambda: ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"], min_length=1)
     enable_deep_research_agent: bool = True
     max_concurrent_local_jobs: int = Field(default=4, ge=1, le=16)
     stale_job_timeout_minutes: int = Field(default=5, ge=1, le=180)
 
+    model_routing: ModelRoutingConfig = Field(default_factory=ModelRoutingConfig)
     limits: ProcessingLimitsConfig
     style: StyleRulesConfig
     report_formats: dict[str, ReportFormatPreset] = Field(min_length=1)

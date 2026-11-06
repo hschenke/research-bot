@@ -12,15 +12,10 @@ from src.domain.exceptions import DispatchError, InputValidationError, ResearchB
 from src.research.gemini_client import fetch_available_gemini_models
 from src.security.sanitization import validate_research_request
 from src.storage.base_repository import ResearchRepository
+from src.ui.views.model_routing_dialog import render_model_routing_dialog
 from src.worker.dispatcher import JobDispatcher
 
-
-def _resolve_ui_models(api_key: str, cfg: DomainConfig) -> list[str]:
-    """Ermittelt die freigegebenen KI-Modelle aus der aktiven Fachlogik-Konfiguration."""
-    try:
-        return fetch_available_gemini_models(api_key, allowed_models=cfg.available_models)
-    except TypeError:
-        return fetch_available_gemini_models(api_key)
+__all__ = ["fetch_available_gemini_models", "render_new_research_view"]
 
 
 def render_new_research_view(
@@ -63,8 +58,17 @@ def render_new_research_view(
     default_depth_idx = depth_options.index(cfg.default_depth)
     format_keys = list(cfg.report_formats.keys())
     default_fmt_idx = format_keys.index(cfg.default_report_format) if cfg.default_report_format in format_keys else 0
-    model_options = _resolve_ui_models(settings.gemini_api_key, cfg)
-    default_model_idx = model_options.index(cfg.default_model) if cfg.default_model in model_options else 0
+
+    routing = cfg.model_routing
+    col_info, col_btn = st.columns([3.2, 1.2], vertical_alignment="center")
+    with col_info:
+        st.caption(
+            f"⚡ **KI-Routing:** Plan `{routing.planning_model}` · Recherche `{routing.research_primary_model}` "
+            f"(Fallback: `{routing.research_fallback_model}`) · Pacing: **{routing.max_rpm} RPM**"
+        )
+    with col_btn:
+        if st.button("🎛️ Routing & Limits", use_container_width=True, help="Modelle, Fallbacks und RPM-Limits im Popup anpassen"):
+            render_model_routing_dialog(repository, cfg, role)
 
     with st.form("create_research_job_form", clear_on_submit=False):
         topic = st.text_input(
@@ -79,7 +83,7 @@ def render_new_research_view(
             max_chars=2000,
         )
 
-        col_fmt, col_depth, col_model, col_lang = st.columns([1.2, 1.3, 1.0, 0.9])
+        col_fmt, col_depth, col_lang = st.columns([1.3, 1.4, 0.9])
         with col_fmt:
             selected_format = st.selectbox(
                 "📐 Berichtsformat & Stil",
@@ -98,13 +102,6 @@ def render_new_research_view(
                     f"({cfg.get_depth_profile(d).estimated_duration_label} · {cfg.get_depth_profile(d).target_word_range})"
                 ),
                 help="Alle Tiefenprofile und Wortumfänge sind unter '🎛️ KI- & Fachlogik' frei editierbar.",
-            )
-        with col_model:
-            selected_model = st.selectbox(
-                "🧠 KI-Modell",
-                options=model_options,
-                index=default_model_idx,
-                help=f"Konfigurierbar in '🎛️ KI- & Fachlogik'. Standard: {cfg.default_model}.",
             )
         with col_lang:
             selected_lang = st.selectbox(
@@ -133,7 +130,7 @@ def render_new_research_view(
         report_format=selected_format,
         language=selected_lang,
         notify_email=settings.email_to,
-        model=selected_model,
+        model=routing.research_primary_model or cfg.default_model,
     )
 
 

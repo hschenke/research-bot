@@ -41,6 +41,7 @@ from src.research.llm_helpers import (
     sleep_with_cancel_check,
     strip_json_code_fences,
 )
+from src.research.rate_limiter import LlmRateLimiter, get_global_rate_limiter
 from src.research.web_search_fallback import (
     build_extractive_markdown_from_citations,
     format_fallback_citations_context,
@@ -114,6 +115,7 @@ class GeminiInteractionsGateway:
         quota_state: SharedQuotaState | None = None,
         web_search_fn: WebSearchFn | None = _UNSET,
         available_models: list[str] | tuple[str, ...] | None = None,
+        rate_limiter: LlmRateLimiter | None = None,
     ) -> None:
         if not settings.has_gemini_configured:
             raise LLMProviderError(
@@ -126,6 +128,7 @@ class GeminiInteractionsGateway:
         self._deadline_monotonic = deadline_monotonic
         self._language = language
         self._quota_state = quota_state or SharedQuotaState()
+        self._rate_limiter = rate_limiter or get_global_rate_limiter()
         self._client = shared_client or create_fast_genai_client(settings.gemini_api_key)
         self._web_search_fn: WebSearchFn | None = (
             (search_external_web_fallback if shared_client is None else None)
@@ -163,6 +166,7 @@ class GeminiInteractionsGateway:
             quota_state=self._quota_state,
             web_search_fn=self._web_search_fn,
             available_models=available_models or self._available_models,
+            rate_limiter=self._rate_limiter,
         )
 
     def with_action_callback(self, on_action: Callable[[str], None]) -> GeminiInteractionsGateway:
@@ -203,6 +207,7 @@ class GeminiInteractionsGateway:
         for model_name in models:
             for same_idx in range(LLM_PER_MODEL_RETRIES + 1):
                 self._check_cancelled()
+                self._rate_limiter.acquire(self._cancel_check)
                 self._emit_action(
                     f"🤖 KI-Strukturanalyse via {model_name} (Versuch {errors + 1}/{MAX_STEP_ERROR_ATTEMPTS})..."
                 )
@@ -228,6 +233,8 @@ class GeminiInteractionsGateway:
                 except Exception as exc:
                     last_exc = exc
                     errors += 1
+                    if is_quota_error(exc):
+                        self._rate_limiter.notify_rate_limit(cooldown_seconds=15.0)
                     logger.warning("Struktur-Aufruf '%s' fehlgeschlagen (%d/%d): %s", model_name, errors, MAX_STEP_ERROR_ATTEMPTS, exc)
                     if errors >= MAX_STEP_ERROR_ATTEMPTS:
                         raise LLMProviderError(
@@ -277,6 +284,7 @@ class GeminiInteractionsGateway:
         for model_name in models:
             for same_idx in range(LLM_PER_MODEL_RETRIES + 1):
                 self._check_cancelled()
+                self._rate_limiter.acquire(self._cancel_check)
                 self._emit_action(
                     f"🌐 KI-Websuche via {model_name} (Versuch {errors + 1}/{MAX_STEP_ERROR_ATTEMPTS})..."
                 )
@@ -308,6 +316,7 @@ class GeminiInteractionsGateway:
                     hit_quota = is_quota_error(exc)
                     if hit_quota:
                         quota_hits += 1
+                        self._rate_limiter.notify_rate_limit(cooldown_seconds=15.0)
                     logger.warning("Grounded-Aufruf mit '%s' fehlgeschlagen (%d/%d): %s", model_name, errors, MAX_STEP_ERROR_ATTEMPTS, exc)
                     if errors >= MAX_STEP_ERROR_ATTEMPTS:
                         if quota_hits >= 2:
@@ -353,6 +362,7 @@ class GeminiInteractionsGateway:
         for idx in range(max_untooled):
             model_name = models[idx % len(models)]
             self._check_cancelled()
+            self._rate_limiter.acquire(self._cancel_check)
             try:
                 timeout_sec = self._timeout_for(prefer_deep)
                 self._emit_action(

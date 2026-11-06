@@ -8,6 +8,17 @@ default_report_format: "compact"
 default_model: "gemini-3.5-flash-lite"
 available_models:
   - "gemini-3.5-flash-lite"
+  - "gemini-3.1-flash-lite"
+
+model_routing:
+  planning_model: "gemini-3.5-flash-lite"
+  research_primary_model: "gemini-3.5-flash-lite"
+  research_fallback_model: "gemini-3.1-flash-lite"
+  synthesizer_model: "gemini-3.5-flash-lite"
+  max_rpm: 12
+  min_call_interval_seconds: 4.5
+  single_pass_research: true
+  enable_google_search: true
 
 enable_deep_research_agent: true
 max_concurrent_local_jobs: 4

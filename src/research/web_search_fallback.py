@@ -34,32 +34,29 @@ def _extract_ddg_target_url(raw_href: str) -> str:
 
 
 def _search_duckduckgo_html(query: str, max_results: int = 5) -> list[SourceCitation]:
-    """Fragt DuckDuckGo HTML Lite mit kurzem Timeout ab."""
+    """Fragt DuckDuckGo Lite via robustem POST-Aufruf mit kurzem Timeout ab."""
     try:
-        resp = requests.get(
-            "https://html.duckduckgo.com/html/",
-            params={"q": query[:200]},
-            headers={"User-Agent": _USER_AGENT, "Accept-Language": "de,en;q=0.8"},
+        resp = requests.post(
+            "https://lite.duckduckgo.com/lite/",
+            data={"q": query[:200]},
+            headers={"User-Agent": "Mozilla/5.0"},
             timeout=(2.5, WEB_FALLBACK_TIMEOUT_SECONDS),
-            allow_redirects=False,
         )
         if resp.status_code != 200 or not resp.text:
             return []
         soup = BeautifulSoup(resp.text[:250_000], "html.parser")
+        links = soup.select("a.result-link")
+        snippets = soup.select(".result-snippet")
         results: list[SourceCitation] = []
         seen: set[str] = set()
-        for node in soup.select(".result"):
-            link = node.select_one("a.result__a")
-            if link is None:
-                continue
+        for idx, link in enumerate(links):
             safe_url = _extract_ddg_target_url(str(link.get("href") or ""))
             if safe_url == "#" or safe_url in seen:
                 continue
             seen.add(safe_url)
             title = link.get_text(" ", strip=True)[:180]
-            snippet_node = node.select_one(".result__snippet")
-            snippet = snippet_node.get_text(" ", strip=True)[:350] if snippet_node else ""
-            results.append(SourceCitation(url=safe_url, title=title, snippet=snippet))
+            snippet_text = snippets[idx].get_text(" ", strip=True)[:350] if idx < len(snippets) else ""
+            results.append(SourceCitation(url=safe_url, title=title, snippet=snippet_text))
             if len(results) >= max_results:
                 break
         return results

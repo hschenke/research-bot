@@ -136,6 +136,14 @@ class ModelRoutingConfig(BaseModel):
     min_call_interval_seconds: float = Field(default=4.5, ge=0.0, le=30.0)
     single_pass_research: bool = True
     enable_google_search: bool = True
+    enable_duckduckgo_search: bool = True
+    enable_reddit_search: bool = True
+    enable_hackernews_search: bool = True
+    enable_wikipedia_search: bool = True
+    enable_arxiv_search: bool = False
+    enable_jina_reader: bool = True
+    enable_browserbase: bool = False
+    enable_cross_verification: bool = True
 
 
 class DomainConfig(BaseModel):

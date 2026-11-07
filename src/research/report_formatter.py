@@ -7,10 +7,12 @@ import re
 from src.config.domain_loader import render_prompt_template
 from src.domain.domain_config import DomainConfig
 from src.domain.models import (
+    ResearchJob,
     ResearchPlan,
     SourceCitation,
     SubTopicFinding,
 )
+from src.research.result_verifier import build_verification_markdown_section
 from src.security.sanitization import sanitize_display_url, sanitize_markdown_links
 
 _LEADING_H1_PATTERN = re.compile(r"^\s*#\s+[^\n]+\n*")
@@ -134,19 +136,54 @@ def build_execution_warnings_notice(warnings: list[str] | None, language: str) -
     return "\n".join(lines)
 
 
+def build_research_briefing_block(
+    topic: str,
+    focus_instructions: str,
+    plan: ResearchPlan | None,
+    language: str,
+) -> str:
+    """Erstellt einen transparenten Nachvollziehbarkeits-Block mit Thema, Vorgaben & Teilthemen."""
+    if not topic and (plan is None or not plan.subtopics):
+        return ""
+    de = language == "de"
+    header = "> [!NOTE] **Recherche-Auftrag & Suchkriterien:**" if de else "> [!NOTE] **Research Request & Search Criteria:**"
+    lines = [header]
+    if topic:
+        lines.append(f"> - **{'Thema' if de else 'Topic'}:** {topic.strip()}")
+    focus_clean = focus_instructions.strip()
+    req_lbl = "Anforderungen / Vorgaben" if de else "Requirements / Focus"
+    if focus_clean:
+        lines.append(f"> - **{req_lbl}:** {focus_clean}")
+    elif topic:
+        none_lbl = "_Keine zusätzlichen Einschränkungen angegeben._" if de else "_No additional constraints specified._"
+        lines.append(f"> - **{req_lbl}:** {none_lbl}")
+    if plan and plan.subtopics:
+        lines.append(f"> - **{'Untersuchte Teilthemen & Leitfragen' if de else 'Investigated Subtopics & Questions'}:**")
+        for st_item in plan.subtopics:
+            lines.append(f">   {st_item.index}. **{st_item.title}** – _{st_item.guiding_question}_")
+    return "\n".join(lines)
+
+
 def assemble_report_markdown(
     report_title: str,
     body_markdown: str,
     key_takeaways: list[str],
-    plan: ResearchPlan,
+    plan: ResearchPlan | None,
     findings: list[SubTopicFinding],
     citations: list[SourceCitation],
     language: str,
     cfg: DomainConfig,
     omit_wrapper_sections: bool,
     warnings: list[str] | None = None,
+    job: ResearchJob | None = None,
 ) -> str:
-    """Setzt Titel, optionalen Teilhinweis, Warnungen, synthetisierten Hauptteil und Quellen zusammen."""
+    """Setzt Titel, Briefing, Warnungen, synthetisierten Hauptteil, Prüfung und Quellen zusammen."""
+    briefing = build_research_briefing_block(
+        topic=job.topic if job else "",
+        focus_instructions=job.focus_instructions if job else "",
+        plan=plan,
+        language=language,
+    )
     partial_notice = build_partial_notice(plan, findings, language, cfg)
     warnings_notice = build_execution_warnings_notice(warnings, language)
     cleaned_body = _LEADING_H1_PATTERN.sub("", body_markdown.strip()).strip()
@@ -154,12 +191,20 @@ def assemble_report_markdown(
         cleaned_body = build_fallback_body(findings, key_takeaways, omit_wrapper_sections)
 
     sections: list[str] = [f"# {report_title.strip()}"]
+    if briefing:
+        sections.extend(["", briefing])
     if partial_notice:
         sections.extend(["", partial_notice])
     if warnings_notice:
         sections.extend(["", warnings_notice])
     if cleaned_body:
         sections.extend(["", cleaned_body])
+
+    routing = getattr(cfg, "model_routing", None)
+    if routing and routing.enable_cross_verification and not omit_wrapper_sections:
+        verif_section = build_verification_markdown_section(citations, findings, language)
+        if verif_section:
+            sections.extend(["", verif_section])
 
     sources_md = build_sources_section(
         citations=citations,

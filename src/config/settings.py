@@ -114,6 +114,21 @@ class AppSettings:
     default_language: str = "de"
     default_depth: ResearchDepth = ResearchDepth.STANDARD
 
+    browserbase_api_key: str = field(default="", repr=False)
+    browserbase_project_id: str = ""
+    reddit_client_id: str = field(default="", repr=False)
+    reddit_client_secret: str = field(default="", repr=False)
+
+    @property
+    def has_browserbase_configured(self) -> bool:
+        """Prüft, ob Browserbase für Headless-Browser-Sessions hinterlegt ist."""
+        return bool(self.browserbase_api_key and not self.browserbase_api_key.startswith("your_"))
+
+    @property
+    def has_reddit_api_configured(self) -> bool:
+        """Prüft, ob offizielle Reddit-API-Zugangsdaten konfiguriert sind."""
+        return bool(self.reddit_client_id and self.reddit_client_secret)
+
     @property
     def has_turso_configured(self) -> bool:
         """Prüft, ob gültige Turso-Zugangsdaten gesetzt sind."""
@@ -207,4 +222,8 @@ def load_app_settings(yaml_path: Path | None = None) -> AppSettings:
             str(yaml_cfg.get("default_depth", "standard")),
             ResearchDepth.STANDARD,
         ),
+        browserbase_api_key=get_secret_or_env("BROWSERBASE_API_KEY"),
+        browserbase_project_id=get_secret_or_env("BROWSERBASE_PROJECT_ID"),
+        reddit_client_id=get_secret_or_env("REDDIT_CLIENT_ID"),
+        reddit_client_secret=get_secret_or_env("REDDIT_CLIENT_SECRET"),
     )

@@ -9,6 +9,9 @@ default_model: "gemini-3.5-flash-lite"
 available_models:
   - "gemini-3.5-flash-lite"
   - "gemini-3.1-flash-lite"
+  - "gemini-2.5-flash"
+  - "gemini-2.5-flash-lite"
+  - "gemini-2.0-flash"
 
 model_routing:
   planning_model: "gemini-3.5-flash-lite"
@@ -19,6 +22,14 @@ model_routing:
   min_call_interval_seconds: 4.5
   single_pass_research: true
   enable_google_search: true
+  enable_duckduckgo_search: true
+  enable_reddit_search: true
+  enable_hackernews_search: true
+  enable_wikipedia_search: true
+  enable_arxiv_search: false
+  enable_jina_reader: true
+  enable_browserbase: false
+  enable_cross_verification: true
 
 enable_deep_research_agent: true
 max_concurrent_local_jobs: 4

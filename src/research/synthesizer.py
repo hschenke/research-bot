@@ -193,6 +193,7 @@ def synthesize_final_report(
         cfg=cfg,
         omit_wrapper_sections=omit_wrapper,
         warnings=warnings,
+        job=job,
     )
     max_tk = cfg.limits.max_takeaways_count
     return ResearchReport(

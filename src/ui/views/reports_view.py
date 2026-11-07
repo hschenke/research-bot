@@ -138,6 +138,19 @@ def _render_single_report(
             repository.delete_job_and_report(report.job_id)
             st.rerun()
 
+    job_record = repository.get_job(report.job_id)
+    checkpoint = repository.load_checkpoint(report.job_id)
+    with st.expander("📋 Recherche-Auftrag, Anforderungen & Teilthemen einsehen", expanded=False):
+        st.markdown(f"**Recherche-Thema:** {report.topic}")
+        if job_record and job_record.focus_instructions.strip():
+            st.markdown(f"**Eingegebene Anforderungen / Schwerpunkte:**\n> {job_record.focus_instructions.strip()}")
+        else:
+            st.caption("Keine zusätzlichen Einschränkungen oder Vorgaben eingegeben.")
+        if checkpoint and checkpoint.plan and checkpoint.plan.subtopics:
+            st.markdown("**Untersuchte Teilthemen & Leitfragen:**")
+            for sub in checkpoint.plan.subtopics:
+                st.markdown(f"{sub.index}. **{sub.title}** – _{sub.guiding_question}_")
+
     if report.citations:
         with st.expander(f"🔗 Alle {len(report.citations)} ausgewerteten Web-Quellen anzeigen"):
             for idx, cite in enumerate(report.citations, start=1):

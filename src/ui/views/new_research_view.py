@@ -60,14 +60,27 @@ def render_new_research_view(
     default_fmt_idx = format_keys.index(cfg.default_report_format) if cfg.default_report_format in format_keys else 0
 
     routing = cfg.model_routing
+    active_tools: list[str] = []
+    if routing.enable_duckduckgo_search:
+        active_tools.append("🦆 DDG")
+    if routing.enable_reddit_search:
+        active_tools.append("💬 Reddit")
+    if routing.enable_hackernews_search:
+        active_tools.append("🔶 HN")
+    if routing.enable_wikipedia_search:
+        active_tools.append("📚 Wiki")
+    if routing.enable_arxiv_search:
+        active_tools.append("🔬 arXiv")
+    tools_str = " · ".join(active_tools) if active_tools else "Reines LLM"
+    google_flag = "🟢 Google Search" if routing.enable_google_search else "⚪ Google Search (aus)"
+
     col_info, col_btn = st.columns([3.2, 1.2], vertical_alignment="center")
     with col_info:
         st.caption(
-            f"⚡ **KI-Routing:** Plan `{routing.planning_model}` · Recherche `{routing.research_primary_model}` "
-            f"(Fallback: `{routing.research_fallback_model}`) · Pacing: **{routing.max_rpm} RPM**"
+            f"⚡ **KI-Routing:** `{routing.research_primary_model}` · {google_flag} · {tools_str} · **{routing.max_rpm} RPM**"
         )
     with col_btn:
-        if st.button("🎛️ Routing & Limits", use_container_width=True, help="Modelle, Fallbacks und RPM-Limits im Popup anpassen"):
+        if st.button("🎛️ Routing & Tools", use_container_width=True, help="Modelle, alternative Such-Tools und RPM-Limits anpassen"):
             render_model_routing_dialog(repository, cfg, role)
 
     with st.form("create_research_job_form", clear_on_submit=False):

@@ -41,11 +41,11 @@ from src.research.llm_helpers import (
     sleep_with_cancel_check,
     strip_json_code_fences,
 )
+from src.research.multi_source_search import search_multi_source_tools
 from src.research.rate_limiter import LlmRateLimiter, get_global_rate_limiter
 from src.research.web_search_fallback import (
     build_extractive_markdown_from_citations,
     format_fallback_citations_context,
-    search_external_web_fallback,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ class GeminiInteractionsGateway:
         self._enable_google_search = enable_google_search
         self._client = shared_client or create_fast_genai_client(settings.gemini_api_key)
         self._web_search_fn: WebSearchFn | None = (
-            (search_external_web_fallback if shared_client is None else None)
+            (lambda q, lang: search_multi_source_tools(q, language=lang, settings=settings))
             if web_search_fn is _UNSET
             else web_search_fn
         )

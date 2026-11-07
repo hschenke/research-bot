@@ -6,11 +6,14 @@ import time
 from unittest.mock import MagicMock
 
 from src.config.domain_loader import load_default_domain_config
+from src.config.settings import AppSettings
 from src.domain.domain_config import ModelRoutingConfig
 from src.domain.enums import ResearchDepth
-from src.domain.models import DepthProfile, ResearchJob, SubTopicPlan
+from src.domain.models import DepthProfile, ResearchJob, SourceCitation, SubTopicPlan
+from src.research.gemini_client import GeminiInteractionsGateway
 from src.research.investigator import investigate_subtopic
 from src.research.rate_limiter import LlmRateLimiter
+from src.research.report_formatter import assemble_report_markdown, build_execution_warnings_notice
 
 
 def test_rate_limiter_sliding_window_and_pacing() -> None:
@@ -114,3 +117,75 @@ def test_investigate_subtopic_uses_single_pass_when_configured() -> None:
     assert mock_gateway.generate_structured.call_count == 0
     assert mock_fetcher.fetch_many_tolerant.call_count == 0
     assert finding.title == "Test Teilthema"
+
+
+def test_build_execution_warnings_notice_formatting() -> None:
+    # Leer bei keinen Warnungen
+    assert build_execution_warnings_notice([], "de") == ""
+    assert build_execution_warnings_notice(None, "de") == ""
+
+    # Deutsch formatierter Block
+    de_notice = build_execution_warnings_notice(["Google Search Tool nicht verfügbar"], "de")
+    assert "> [!WARNING] **Hinweis zu API- & Tool-Limits während der Recherche:**" in de_notice
+    assert "> - Google Search Tool nicht verfügbar" in de_notice
+
+    # Englisch formatierter Block
+    en_notice = build_execution_warnings_notice(["Rate limit reached"], "en")
+    assert "> [!WARNING] **Notice regarding API & Tool limits during research:**" in en_notice
+    assert "> - Rate limit reached" in en_notice
+
+
+def test_assemble_report_markdown_includes_warnings() -> None:
+    cfg = load_default_domain_config()
+    md = assemble_report_markdown(
+        report_title="Testbericht",
+        body_markdown="Hauptteil der Recherche.",
+        key_takeaways=[],
+        plan=None,
+        findings=[],
+        citations=[],
+        language="de",
+        cfg=cfg,
+        omit_wrapper_sections=False,
+        warnings=["Test-Warnung bezüglich 429."],
+    )
+    assert "# Testbericht" in md
+    assert "> [!WARNING] **Hinweis zu API- & Tool-Limits während der Recherche:**" in md
+    assert "> - Test-Warnung bezüglich 429." in md
+    assert "Hauptteil der Recherche." in md
+
+
+def test_gateway_with_search_disabled_skips_grounded_phase() -> None:
+    settings = AppSettings(gemini_api_key="valid_test_key")
+    mock_client = MagicMock()
+    mock_interaction = MagicMock()
+    mock_interaction.outputs = [MagicMock(text="Extrahierter Text")]
+    mock_client.interactions.create.return_value = mock_interaction
+
+    fake_citations = [
+        SourceCitation(
+            url="https://example.com/info",
+            title="Beispielseite",
+            snippet="Wichtiger Inhalt",
+        )
+    ]
+
+    gw = GeminiInteractionsGateway(
+        settings,
+        shared_client=mock_client,
+        fast_mode=True,
+        enable_google_search=False,
+        web_search_fn=lambda _q, _lang: fake_citations,
+    )
+    res = gw.generate_grounded(
+        prompt="Thema: Python Clean Code",
+        system_instruction="Sei präzise.",
+        use_url_context=False,
+    )
+
+    assert mock_client.interactions.create.call_count == 1
+    call_kwargs = mock_client.interactions.create.call_args.kwargs
+    # Darf keine tools=[{'type': 'google_search'}] enthalten haben!
+    assert "tools" not in call_kwargs
+    assert len(res.citations) == 1
+    assert res.citations[0].url == "https://example.com/info"

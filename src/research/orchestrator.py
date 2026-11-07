@@ -199,6 +199,7 @@ class ResearchOrchestrator:
         if not job_model:
             job_model = domain_config.default_model
 
+        enable_search = routing.enable_google_search if routing else True
         if hasattr(self._llm, "with_preferred_model"):
             try:
                 return self._llm.with_preferred_model(
@@ -209,6 +210,7 @@ class ResearchOrchestrator:
                     deadline_monotonic=deadline_monotonic,
                     language=job.language,
                     available_models=domain_config.available_models,
+                    enable_google_search=enable_search,
                 )
             except TypeError:
                 return self._llm.with_preferred_model(job_model)
@@ -278,6 +280,7 @@ class ResearchOrchestrator:
         if hasattr(synth_llm, "with_preferred_model") and not use_agent and routing:
             with contextlib.suppress(TypeError):
                 synth_llm = synth_llm.with_preferred_model(synth_model)
+        warnings = getattr(synth_llm, "get_warnings", lambda: [])()
         report = synthesize_final_report(
             gateway=synth_llm,
             job=refreshed_job,
@@ -289,6 +292,7 @@ class ResearchOrchestrator:
             on_action=lambda msg: self._repo.update_live_action(job.id, msg),
             profile=profile,
             domain_config=domain_config,
+            warnings=warnings,
         )
         self._check_alive(job.id)
         completion_note = (

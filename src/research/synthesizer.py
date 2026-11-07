@@ -148,6 +148,7 @@ def synthesize_final_report(
     on_action: Callable[[str], None] | None = None,
     profile: DepthProfile | None = None,
     domain_config: DomainConfig | None = None,
+    warnings: list[str] | None = None,
 ) -> ResearchReport:
     """Synthetisiert alle Teilbefunde in einen knackigen, formatgetreuen `ResearchReport`."""
     cfg = domain_config or load_default_domain_config()
@@ -191,6 +192,7 @@ def synthesize_final_report(
         language=job.language,
         cfg=cfg,
         omit_wrapper_sections=omit_wrapper,
+        warnings=warnings,
     )
     max_tk = cfg.limits.max_takeaways_count
     return ResearchReport(

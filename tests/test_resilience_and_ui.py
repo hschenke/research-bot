@@ -126,9 +126,11 @@ def test_gateway_caps_429_at_three_attempts_and_switches_to_external_web_fallbac
         prefer_deep=False,
     )
 
-    # 3 Grounded-Versuche + max. 2 schnelle Untooled-Versuche = 5 kurze Calls (keine Endlosschleife)
-    assert mock_client.interactions.create.call_count == 5
+    # 1 schneller Grounded-Versuch (sofortiger Abbruch bei 429 statt 3x Sleep-Schleifen) + max. 2 schnelle Untooled-Versuche = 3 Calls
+    assert mock_client.interactions.create.call_count == 3
     assert gw._quota_state.is_grounding_exhausted() is True
+    assert len(gw.get_warnings()) >= 1
+    assert "Google Search Tool" in gw.get_warnings()[0]
     assert res.model_used == "web-fallback-extractive"
     assert len(res.citations) == 1
     assert "Wikipedia: Badesee" in res.text

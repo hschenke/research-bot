@@ -63,6 +63,7 @@ class SharedQuotaState:
         self._cooldown = cooldown_seconds
         self._lock = threading.Lock()
         self._exhausted_until: float = 0.0
+        self._warnings: list[str] = []
 
     def is_grounding_exhausted(self) -> bool:
         with self._lock:
@@ -71,6 +72,16 @@ class SharedQuotaState:
     def mark_grounding_exhausted(self) -> None:
         with self._lock:
             self._exhausted_until = time.monotonic() + self._cooldown
+
+    def add_warning(self, msg: str) -> None:
+        with self._lock:
+            clean = msg.strip()
+            if clean and clean not in self._warnings:
+                self._warnings.append(clean)
+
+    def get_warnings(self) -> list[str]:
+        with self._lock:
+            return list(self._warnings)
 
 
 def create_fast_genai_client(api_key: str) -> genai.Client:

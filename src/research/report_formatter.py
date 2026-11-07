@@ -64,12 +64,14 @@ def build_sources_section(
 
 
 def build_partial_notice(
-    plan: ResearchPlan,
+    plan: ResearchPlan | None,
     findings: list[SubTopicFinding],
     language: str,
     cfg: DomainConfig,
 ) -> str:
     """Erstellt einen transparenten Hinweisblock bei Teilergebnissen."""
+    if plan is None:
+        return ""
     total = len(plan.subtopics)
     if total <= 0 or len(findings) >= total:
         return ""
@@ -115,6 +117,23 @@ def build_fallback_body(
     return "\n".join(parts).strip()
 
 
+def build_execution_warnings_notice(warnings: list[str] | None, language: str) -> str:
+    """Erstellt einen formatierten Markdown-Warnblock für im Lauf aufgetretene API- oder Tool-Fehler."""
+    if not warnings:
+        return ""
+    header = (
+        "> [!WARNING] **Hinweis zu API- & Tool-Limits während der Recherche:**"
+        if language == "de"
+        else "> [!WARNING] **Notice regarding API & Tool limits during research:**"
+    )
+    lines: list[str] = [header]
+    for w in warnings:
+        clean = w.strip()
+        if clean:
+            lines.append(f"> - {clean}")
+    return "\n".join(lines)
+
+
 def assemble_report_markdown(
     report_title: str,
     body_markdown: str,
@@ -125,9 +144,11 @@ def assemble_report_markdown(
     language: str,
     cfg: DomainConfig,
     omit_wrapper_sections: bool,
+    warnings: list[str] | None = None,
 ) -> str:
-    """Setzt Titel, optionalen Teilhinweis, synthetisierten Hauptteil und Quellen zusammen."""
+    """Setzt Titel, optionalen Teilhinweis, Warnungen, synthetisierten Hauptteil und Quellen zusammen."""
     partial_notice = build_partial_notice(plan, findings, language, cfg)
+    warnings_notice = build_execution_warnings_notice(warnings, language)
     cleaned_body = _LEADING_H1_PATTERN.sub("", body_markdown.strip()).strip()
     if not cleaned_body:
         cleaned_body = build_fallback_body(findings, key_takeaways, omit_wrapper_sections)
@@ -135,6 +156,8 @@ def assemble_report_markdown(
     sections: list[str] = [f"# {report_title.strip()}"]
     if partial_notice:
         sections.extend(["", partial_notice])
+    if warnings_notice:
+        sections.extend(["", warnings_notice])
     if cleaned_body:
         sections.extend(["", cleaned_body])
 

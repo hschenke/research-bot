@@ -116,6 +116,7 @@ class GeminiInteractionsGateway:
         web_search_fn: WebSearchFn | None = _UNSET,
         available_models: list[str] | tuple[str, ...] | None = None,
         rate_limiter: LlmRateLimiter | None = None,
+        enable_google_search: bool = True,
     ) -> None:
         if not settings.has_gemini_configured:
             raise LLMProviderError(
@@ -129,6 +130,7 @@ class GeminiInteractionsGateway:
         self._language = language
         self._quota_state = quota_state or SharedQuotaState()
         self._rate_limiter = rate_limiter or get_global_rate_limiter()
+        self._enable_google_search = enable_google_search
         self._client = shared_client or create_fast_genai_client(settings.gemini_api_key)
         self._web_search_fn: WebSearchFn | None = (
             (search_external_web_fallback if shared_client is None else None)
@@ -152,6 +154,7 @@ class GeminiInteractionsGateway:
         deadline_monotonic: float | None = _UNSET,
         language: str | None = None,
         available_models: list[str] | tuple[str, ...] | None = None,
+        enable_google_search: bool | None = None,
     ) -> GeminiInteractionsGateway:
         """Erzeugt eine Gateway-Sicht mit gemeinsamem Client, Quota-Gedächtnis und Live-Action-Hook."""
         return GeminiInteractionsGateway(
@@ -167,6 +170,7 @@ class GeminiInteractionsGateway:
             web_search_fn=self._web_search_fn,
             available_models=available_models or self._available_models,
             rate_limiter=self._rate_limiter,
+            enable_google_search=self._enable_google_search if enable_google_search is None else enable_google_search,
         )
 
     def with_action_callback(self, on_action: Callable[[str], None]) -> GeminiInteractionsGateway:
@@ -248,6 +252,10 @@ class GeminiInteractionsGateway:
 
         raise LLMProviderError(f"Alle Gemini-Modelle für Struktur-Output fehlgeschlagen: {last_exc}")
 
+    def get_warnings(self) -> list[str]:
+        """Liefert alle während des Gateway-Laufs gesammelten Kontingent- und Tool-Warnungen."""
+        return self._quota_state.get_warnings()
+
     def generate_grounded(
         self,
         prompt: str,
@@ -258,7 +266,7 @@ class GeminiInteractionsGateway:
         models = self._select_models(prefer_deep)
         last_exc: Exception | None = None
 
-        if not self._quota_state.is_grounding_exhausted():
+        if self._enable_google_search and not self._quota_state.is_grounding_exhausted():
             res, last_exc = self._try_grounded_phase(prompt, system_instruction, use_url_context, prefer_deep, models)
             if res is not None:
                 return res
@@ -279,7 +287,6 @@ class GeminiInteractionsGateway:
 
         last_exc: Exception | None = None
         errors = 0
-        quota_hits = 0
 
         for model_name in models:
             for same_idx in range(LLM_PER_MODEL_RETRIES + 1):
@@ -315,29 +322,31 @@ class GeminiInteractionsGateway:
                     errors += 1
                     hit_quota = is_quota_error(exc)
                     if hit_quota:
-                        quota_hits += 1
-                        self._rate_limiter.notify_rate_limit(cooldown_seconds=15.0)
+                        self._quota_state.mark_grounding_exhausted()
+                        warning_msg = (
+                            "Google Search Tool im Free Tier / API-Plan nicht verfügbar (HTTP 429: Billing erforderlich) – automatische Web- und Wikipedia-Quellen verwendet."
+                            if self._language == "de"
+                            else "Google Search Tool unavailable on current API plan (HTTP 429: Billing required) – automated web and Wikipedia fallback sources used."
+                        )
+                        self._quota_state.add_warning(warning_msg)
+                        self._emit_action("⚡ Google Search Tool Kontingentlimit (429) – wechsle sofort zu Web-Fallback...")
+                        logger.warning("Grounded-Aufruf wegen Quota-Fehler (429) abgebrochen: %s", exc)
+                        return None, last_exc
                     logger.warning("Grounded-Aufruf mit '%s' fehlgeschlagen (%d/%d): %s", model_name, errors, MAX_STEP_ERROR_ATTEMPTS, exc)
                     if errors >= MAX_STEP_ERROR_ATTEMPTS:
-                        if quota_hits >= 2:
-                            self._quota_state.mark_grounding_exhausted()
                         return None, last_exc
                     has_more_models = len(models) > 1 and model_name != models[-1]
-                    if same_idx < LLM_PER_MODEL_RETRIES and (
-                        is_transient_llm_error(exc) or (hit_quota and not has_more_models)
-                    ):
+                    if same_idx < LLM_PER_MODEL_RETRIES and is_transient_llm_error(exc):
                         sleep_with_cancel_check(compute_backoff_seconds(same_idx), self._cancel_check)
                         continue
                     if has_more_models:
                         self._emit_action(
-                            f"⚡ {'API-Limit (429)' if hit_quota else 'Fehler'} bei {model_name} – wechsle Modell ({errors}/{MAX_STEP_ERROR_ATTEMPTS})..."
+                            f"⚡ Fehler bei {model_name} – wechsle Modell ({errors}/{MAX_STEP_ERROR_ATTEMPTS})..."
                         )
                         break
                     sleep_with_cancel_check(compute_backoff_seconds(same_idx), self._cancel_check)
             sleep_with_cancel_check(MODEL_SWITCH_PAUSE_SECONDS, self._cancel_check)
 
-        if quota_hits >= 2:
-            self._quota_state.mark_grounding_exhausted()
         return None, last_exc
 
     def _run_alternative_web_fallback(
@@ -384,6 +393,12 @@ class GeminiInteractionsGateway:
                 last_exc = exc
 
         if ext_citations:
+            warn = (
+                "KI-Modell-Kontingent temporär erschöpft – Teilzusammenfassung direkt aus Web-Quellen erstellt."
+                if self._language == "de"
+                else "LLM quota temporarily exhausted – partial summary generated directly from web sources."
+            )
+            self._quota_state.add_warning(warn)
             self._emit_action("📋 KI-Kontingent erschöpft – erstelle Direkt-Zusammenfassung aus Web-Quellen...")
             return GroundedGeneration(
                 text=build_extractive_markdown_from_citations(query or "Teilgebiet", ext_citations, self._language),

@@ -101,19 +101,24 @@ def render_app_and_limits_tab(
     lim = cfg.limits
 
     with st.form("form_app_and_limits", clear_on_submit=False):
-        with st.expander("🎯 Standard-Vorgaben & Freigaben (Modelle, Format, Tiefe, Sprache)", expanded=False):
+        with st.expander("🎯 Standard-Vorgaben (Sprache, Tiefe & Format)", expanded=False):
+            st.caption(
+                "💡 **KI-Modell- & Tool-Routing:** Die Zuweisung von KI-Modellen "
+                "(Planung, Recherche, Fallback, Synthese) und Such-Tools erfolgt zentral im Tab „Neue Recherche“ "
+                "über den Button **„🎛️ Routing & Tools“**."
+            )
             c1, c2 = st.columns(2)
             with c1:
-                models_raw = st.text_input(
-                    "Freigegebene KI-Modelle (kommagetrennt)",
-                    value=", ".join(cfg.available_models),
-                    disabled=not is_admin,
-                )
-                def_model = st.text_input("Standard-KI-Modell", value=cfg.default_model, disabled=not is_admin)
                 def_lang = st.selectbox(
                     "Standard-Sprache",
                     options=["de", "en"],
                     index=0 if cfg.default_language == "de" else 1,
+                    format_func=lambda code: "Deutsch" if code == "de" else "English",
+                    disabled=not is_admin,
+                )
+                en_agent = st.checkbox(
+                    "Autonomen Deep-Research-Agent global erlauben",
+                    value=cfg.enable_deep_research_agent,
                     disabled=not is_admin,
                 )
             with c2:
@@ -129,11 +134,6 @@ def render_app_and_limits_tab(
                     options=fmt_keys,
                     index=fmt_keys.index(cfg.default_report_format) if cfg.default_report_format in fmt_keys else 0,
                     format_func=lambda k: cfg.report_formats[k].label,
-                    disabled=not is_admin,
-                )
-                en_agent = st.checkbox(
-                    "Autonomen Deep-Research-Agent global erlauben",
-                    value=cfg.enable_deep_research_agent,
                     disabled=not is_admin,
                 )
 
@@ -160,7 +160,6 @@ def render_app_and_limits_tab(
         )
 
     if saved and is_admin:
-        models = [m.strip() for m in models_raw.split(",") if m.strip()]
         new_limits = ProcessingLimitsConfig(
             max_search_queries_per_subtopic=int(max_sq),
             max_open_questions_per_followup=int(max_oq),
@@ -173,8 +172,6 @@ def render_app_and_limits_tab(
             repository,
             cfg.model_copy(
                 update={
-                    "available_models": models,
-                    "default_model": def_model.strip(),
                     "default_language": def_lang,
                     "default_depth": def_depth,
                     "default_report_format": def_fmt,

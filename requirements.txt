@@ -6,3 +6,4 @@ markdown>=3.7
 pyyaml>=6.0.2
 python-dotenv>=1.0.1
 streamlit>=1.40.0
+defusedxml>=0.7.1

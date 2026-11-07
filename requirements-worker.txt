@@ -5,3 +5,4 @@ beautifulsoup4>=4.12.3
 markdown>=3.7
 pyyaml>=6.0.2
 python-dotenv>=1.0.1
+defusedxml>=0.7.1

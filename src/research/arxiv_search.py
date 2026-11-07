@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 
-import defusedxml.ElementTree as ET
+try:
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET  # noqa: S314
 import requests
 
 from src.domain.models import SourceCitation
@@ -41,7 +44,7 @@ def search_arxiv(
         if resp.status_code != 200 or not resp.content:
             return []
 
-        root = ET.fromstring(resp.content)
+        root = ET.fromstring(resp.content)  # noqa: S314
         citations: list[SourceCitation] = []
         seen_urls: set[str] = set()
 

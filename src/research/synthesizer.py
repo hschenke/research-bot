@@ -144,6 +144,13 @@ def _build_synthesis_prompts(
             "max_takeaways": cfg.limits.max_takeaways_count,
         },
     )
+    if cfg.is_top_x_query(job.topic, job.focus_instructions):
+        user_prompt += (
+            "\n\n🚨 STRIKTE PRIORITÄT FÜR DIESE TOP-X-ANFRAGE: "
+            "Erstelle in `body_markdown` ZWINGEND als allererstes Element eine saubere Markdown-Tabelle aller Top-Einträge "
+            "(| Rang | Name / Eintrag | Kernfakten & Details | Quelle |). "
+            "Verwende KEINE reine Bulletpoint-Liste als Ersatz für die geforderte Tabelle!"
+        )
     return sys_prompt, user_prompt, fmt_preset.omit_wrapper_sections
 
 

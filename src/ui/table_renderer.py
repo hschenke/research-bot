@@ -8,6 +8,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from src.research.table_extractor import auto_generate_top_x_table
+
 _SEPARATOR_CELL_PATTERN = re.compile(r"^:?-+:?$")
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
 _PLAIN_URL_PATTERN = re.compile(r"^https?://[^\s]+$")
@@ -155,8 +157,18 @@ def render_markdown_with_interactive_tables(content_markdown: str) -> None:
     has_any_table = any(b_type == "table" for b_type, _ in blocks)
 
     if not has_any_table:
-        st.markdown(content_markdown)
-        return
+        fallback_table = auto_generate_top_x_table(content_markdown)
+        if fallback_table:
+            header = "\n\n## 🏆 Top-Übersicht & Vergleich\n\n" + fallback_table + "\n\n"
+            first_h2 = content_markdown.find("## ")
+            if first_h2 != -1:
+                content_markdown = content_markdown[:first_h2] + header + content_markdown[first_h2:]
+            else:
+                content_markdown = content_markdown + header
+            blocks = split_markdown_by_tables(content_markdown)
+        else:
+            st.markdown(content_markdown)
+            return
 
     for block_type, content in blocks:
         if block_type == "text":

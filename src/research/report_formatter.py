@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from src.config.domain_loader import render_prompt_template
-from src.domain.domain_config import DomainConfig
+from src.domain.domain_config import DomainConfig, ModelRoutingConfig
 from src.domain.models import (
     ResearchJob,
     ResearchPlan,
@@ -13,6 +13,7 @@ from src.domain.models import (
     SubTopicFinding,
 )
 from src.research.result_verifier import build_verification_markdown_section
+from src.research.table_extractor import auto_generate_top_x_table
 from src.security.sanitization import sanitize_display_url, sanitize_markdown_links
 
 _LEADING_H1_PATTERN = re.compile(r"^\s*#\s+[^\n]+\n*")
@@ -141,8 +142,9 @@ def build_research_briefing_block(
     focus_instructions: str,
     plan: ResearchPlan | None,
     language: str,
+    routing: ModelRoutingConfig | None = None,
 ) -> str:
-    """Erstellt einen transparenten Nachvollziehbarkeits-Block mit Thema, Vorgaben & Teilthemen."""
+    """Erstellt einen transparenten Nachvollziehbarkeits-Block mit Thema, Vorgaben, Tools & Teilthemen."""
     if not topic and (plan is None or not plan.subtopics):
         return ""
     de = language == "de"
@@ -157,11 +159,37 @@ def build_research_briefing_block(
     elif topic:
         none_lbl = "_Keine zusätzlichen Einschränkungen angegeben._" if de else "_No additional constraints specified._"
         lines.append(f"> - **{req_lbl}:** {none_lbl}")
+
+    if routing is not None:
+        tools: list[str] = ["Google Web-Suche"]
+        if getattr(routing, "enable_reddit_search", False):
+            tools.append("Reddit")
+        if getattr(routing, "enable_hackernews_search", False):
+            tools.append("Hacker News")
+        if getattr(routing, "enable_wikipedia_search", False):
+            tools.append("Wikipedia")
+        if getattr(routing, "enable_arxiv_search", False):
+            tools.append("arXiv")
+        if getattr(routing, "enable_browserbase", False):
+            tools.append("🌐 Browserbase (Cloud-Headless aktiv)")
+        elif getattr(routing, "enable_jina_reader", False):
+            tools.append("Jina Reader")
+        tools_lbl = "Eingesetzte Recherche-Tools" if de else "Active Research Tools"
+        lines.append(f"> - **{tools_lbl}:** {', '.join(tools)}")
+
     if plan and plan.subtopics:
         lines.append(f"> - **{'Untersuchte Teilthemen & Leitfragen' if de else 'Investigated Subtopics & Questions'}:**")
         for st_item in plan.subtopics:
             lines.append(f">   {st_item.index}. **{st_item.title}** – _{st_item.guiding_question}_")
     return "\n".join(lines)
+
+
+def _has_markdown_table(text: str) -> bool:
+    lines = text.splitlines()
+    for i in range(len(lines) - 1):
+        if "|" in lines[i] and re.match(r"^\s*\|?\s*:?-+:?", lines[i + 1]):
+            return True
+    return False
 
 
 def assemble_report_markdown(
@@ -178,17 +206,31 @@ def assemble_report_markdown(
     job: ResearchJob | None = None,
 ) -> str:
     """Setzt Titel, Briefing, Warnungen, synthetisierten Hauptteil, Prüfung und Quellen zusammen."""
+    routing = getattr(cfg, "model_routing", None)
     briefing = build_research_briefing_block(
         topic=job.topic if job else "",
         focus_instructions=job.focus_instructions if job else "",
         plan=plan,
         language=language,
+        routing=routing,
     )
     partial_notice = build_partial_notice(plan, findings, language, cfg)
     warnings_notice = build_execution_warnings_notice(warnings, language)
     cleaned_body = _LEADING_H1_PATTERN.sub("", body_markdown.strip()).strip()
     if not cleaned_body:
         cleaned_body = build_fallback_body(findings, key_takeaways, omit_wrapper_sections)
+
+    topic_str = job.topic if job else ""
+    focus_str = job.focus_instructions if job else ""
+    if cfg.is_top_x_query(topic_str, focus_str) and not _has_markdown_table(cleaned_body):
+        auto_table = auto_generate_top_x_table(cleaned_body)
+        if auto_table:
+            lbl = "## 🏆 Top-Übersicht & Vergleich" if language == "de" else "## 🏆 Top Overview & Comparison"
+            first_h2 = cleaned_body.find("## ")
+            if first_h2 != -1:
+                cleaned_body = f"{cleaned_body[:first_h2]}{lbl}\n\n{auto_table}\n\n{cleaned_body[first_h2:]}"
+            else:
+                cleaned_body = f"{lbl}\n\n{auto_table}\n\n{cleaned_body}"
 
     sections: list[str] = [f"# {report_title.strip()}"]
     if briefing:

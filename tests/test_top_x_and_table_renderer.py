@@ -13,7 +13,9 @@ from src.research.browser_tools import (
     BrowserbaseIntegration,
     fetch_via_browserbase,
 )
+from src.research.report_formatter import build_research_briefing_block
 from src.research.synthesizer import _build_synthesis_prompts
+from src.research.table_extractor import auto_generate_top_x_table
 from src.research.web_fetcher import FetchedWebPage, SafeWebFetcher
 from src.ui.table_renderer import (
     _clean_cell_content,
@@ -178,3 +180,34 @@ def test_safe_web_fetcher_fallback_on_http_error() -> None:
         assert isinstance(page, FetchedWebPage)
         assert page.text_content == "Fallback Inhalt von gesperrter Seite"
         assert "[Browserbase Cloud]" in page.title
+
+
+def test_auto_generate_top_x_table_from_bullets() -> None:
+    bullet_markdown = (
+        "## 1. Top-Auswahl der Strände\n\n"
+        "* **Playa de San Juan (Alicante):** Beliebter Sandstrand ([Surfline](https://surfline.com)).\n"
+        "* **Playa de Guardamar:** Exponierte Wellen ([Windfinder](https://windfinder.com)).\n\n"
+        "## 2. Wetterbedingungen\n"
+        "- Starker Wind im Winter."
+    )
+    table = auto_generate_top_x_table(bullet_markdown)
+    assert table is not None
+    assert "| Rang | Name / Eintrag |" in table
+    assert "| 1 | Playa de San Juan (Alicante) |" in table
+    assert "| 2 | Playa de Guardamar |" in table
+    assert "[Surfline](https://surfline.com)" in table
+
+
+def test_briefing_block_includes_active_tools() -> None:
+    cfg = load_default_domain_config()
+    routing = cfg.model_routing
+    routing_with_bb = routing.model_copy(update={"enable_browserbase": True})
+    briefing = build_research_briefing_block(
+        topic="Top 10 Tools",
+        focus_instructions="",
+        plan=None,
+        language="de",
+        routing=routing_with_bb,
+    )
+    assert "Eingesetzte Recherche-Tools:" in briefing
+    assert "🌐 Browserbase (Cloud-Headless aktiv)" in briefing

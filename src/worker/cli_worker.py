@@ -55,7 +55,13 @@ def run_worker_cli(argv: list[str] | None = None) -> int:
         return 1
 
     repo = create_repository(settings, initialize=True)
-    fetcher = SafeWebFetcher()
+    domain_cfg = repo.get_domain_config()
+    routing = domain_cfg.model_routing if domain_cfg else None
+    fetcher = SafeWebFetcher(
+        settings=settings,
+        enable_jina_reader=routing.enable_jina_reader if routing else True,
+        enable_browserbase=routing.enable_browserbase if routing else False,
+    )
     worker_id = f"gh-run-{os.getenv('GITHUB_RUN_ID', 'cli')}"
 
     try:

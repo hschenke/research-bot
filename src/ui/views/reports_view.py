@@ -21,6 +21,7 @@ from src.notifications.notifier import EmailNotifier
 from src.research.llm_helpers import normalize_preferred_model
 from src.storage.base_repository import ResearchRepository
 from src.ui.date_formatter import format_datetime_german
+from src.ui.table_renderer import render_markdown_with_interactive_tables
 
 
 def render_reports_view(
@@ -158,7 +159,7 @@ def _render_single_report(
                 st.markdown(f"{idx}. [{label}]({cite.url})")
 
     with st.container(border=True):
-        st.markdown(report.content_markdown)
+        render_markdown_with_interactive_tables(report.content_markdown)
 
 
 def _resend_report_email(

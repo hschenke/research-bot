@@ -71,7 +71,13 @@ class LocalBackgroundRunner:
             return
 
         repo = create_repository(self._settings, initialize=False)
-        fetcher = SafeWebFetcher()
+        domain_cfg = repo.get_domain_config()
+        routing = domain_cfg.model_routing if domain_cfg else None
+        fetcher = SafeWebFetcher(
+            settings=self._settings,
+            enable_jina_reader=routing.enable_jina_reader if routing else True,
+            enable_browserbase=routing.enable_browserbase if routing else False,
+        )
         try:
             gateway = GeminiInteractionsGateway(self._settings)
             notifier = EmailNotifier(self._settings)

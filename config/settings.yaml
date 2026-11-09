@@ -51,6 +51,7 @@ style:
     - Kein künstliches Fazit- oder Ausblick-Kapitel anhängen, sofern es keine echten neuen Handlungsempfehlungen enthält.
   format_override_rules: |-
     - OBERSTE PRIORITÄT – NUTZERWUNSCH SCHLÄGT STANDARDSTRUKTUR: Prüfe Thema, Fokus-Hinweise und gewähltes Berichtsformat genau.
+    - TOP-X / RANKING-ANFRAGEN (z.B. Top 10, Top 5, die besten N, Ranking): Erstelle ZWINGEND immer eine saubere, vollständige Markdown-Tabelle aller Top-X Einträge als zentrales Element! Spalten: `| Rang | Name / Tool | Kategorie | Kernmerkmale & Kennzahlen | Preis / Modell | Quelle / Link |`. Jeder Eintrag erhält einen nummerierten Rang (1, 2, ...). Halte die Tabellenzeilen kompakt und faktenreich, damit sie in der Benutzeroberfläche interaktiv sortiert und gefiltert werden können.
     - Wenn eine knappe Liste, Aufzählung, Top-N-Auswahl, Stichpunktliste oder Kurzantwort verlangt wird, liefere AUSSCHLIESSLICH genau diese knappe Liste/Struktur!
     - Lass bei Listen- oder Ultrakurzwünschen jegliches Vorwort, Executive Summary, Kapitel-Prosa und Fazit komplett weg – starte sofort mit dem ersten Listenpunkt.
   compact_list_keywords:

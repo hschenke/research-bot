@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.domain.enums import ResearchDepth
@@ -183,6 +185,19 @@ class DomainConfig(BaseModel):
             return True
         combined = f"{topic}\n{focus_instructions}".lower()
         return any(kw.strip().lower() in combined for kw in self.style.compact_list_keywords if kw.strip())
+
+    def is_top_x_query(self, topic: str, focus_instructions: str = "") -> bool:
+        """Erkennt, ob ein Recherche-Auftrag eine Top-X Rangliste (z. B. Top 10, Top 5) verlangt."""
+        combined = f"{topic}\n{focus_instructions}".lower()
+        patterns = (
+            r"\btop\s*\d+\b",
+            r"\b(?:die\s+)?\d+\s+best(?:en|e)?\b",
+            r"\bbest(?:en|e)?\s+\d+\b",
+            r"\branking\b",
+            r"\bvergleichstabelle\b",
+            r"\btop-?\d+\b",
+        )
+        return any(re.search(pat, combined, re.IGNORECASE) for pat in patterns)
 
     def resolve_effective_format(
         self,

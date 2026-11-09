@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _JINA_READER_PREFIX = "https://r.jina.ai/"
 _BROWSERBASE_API_URL = "https://api.browserbase.com/v1/sessions"
+_BROWSERBASE_FETCH_URL = "https://api.browserbase.com/v1/fetch"
 _USER_AGENT = "ResearchBot/0.8 (BrowserTools; +https://github.com/hschenke/research-bot)"
 
 
@@ -46,6 +47,46 @@ def fetch_via_jina_reader(
         return ""
 
 
+def fetch_via_browserbase(
+    url: str,
+    api_key: str,
+    project_id: str = "",
+    timeout_seconds: float = 8.0,
+    max_chars: int = 4000,
+) -> str:
+    """Extrahiert Volltext via Browserbase Fetch API für JS-lastige Seiten & Bot-Schutz."""
+    if not api_key or api_key.startswith("your_"):
+        return ""
+    safe_url = sanitize_display_url(url)
+    if safe_url == "#" or not safe_url.startswith("http"):
+        return ""
+
+    payload: dict[str, Any] = {"url": safe_url}
+    if project_id:
+        payload["projectId"] = project_id
+
+    try:
+        resp = requests.post(
+            _BROWSERBASE_FETCH_URL,
+            json=payload,
+            headers={
+                "X-BB-API-Key": api_key,
+                "Content-Type": "application/json",
+                "User-Agent": _USER_AGENT,
+            },
+            timeout=(3.0, timeout_seconds),
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            content = data.get("content") or data.get("text") or data.get("markdown") or ""
+            if content and isinstance(content, str):
+                return content.strip()[:max_chars]
+        return ""
+    except (requests.RequestException, ValueError) as exc:
+        logger.debug("Browserbase Fetch Fehler für '%s': %s", url, exc)
+        return ""
+
+
 class BrowserbaseIntegration:
     """Schnittstelle zu Browserbase für serverlose Headless-Browser-Sitzungen."""
 
@@ -72,6 +113,21 @@ class BrowserbaseIntegration:
             "info": f"Cloud-Headless-Browser aktiv (Projekt-ID: {self._project_id or 'Standard'}).",
         }
 
+    def fetch_page_content(
+        self,
+        url: str,
+        timeout_seconds: float = 8.0,
+        max_chars: int = 4000,
+    ) -> str:
+        """Extrahiert Volltext einer Webseite über die Browserbase Fetch API."""
+        return fetch_via_browserbase(
+            url=url,
+            api_key=self._api_key,
+            project_id=self._project_id,
+            timeout_seconds=timeout_seconds,
+            max_chars=max_chars,
+        )
+
     def create_session(self, timeout_seconds: float = 5.0) -> str | None:
         """Erstellt eine neue Browserbase-Sitzung, falls API-Key vorhanden."""
         if not self.is_available:
@@ -93,3 +149,29 @@ class BrowserbaseIntegration:
         except (requests.RequestException, ValueError) as exc:
             logger.debug("Browserbase Session-Erstellung fehlgeschlagen: %s", exc)
             return None
+
+
+def fetch_fallback_web_content(
+    url: str,
+    settings: AppSettings | None = None,
+    enable_browserbase: bool = False,
+    enable_jina_reader: bool = True,
+    max_chars: int = 4000,
+) -> tuple[str, str]:
+    """Versucht alternativen Web-Abruf über Browserbase oder Jina Reader bei Scraper-Blockaden.
+
+    Returns:
+        (content_text, engine_name)
+    """
+    if enable_browserbase and settings is not None and settings.has_browserbase_configured():
+        bb = BrowserbaseIntegration(settings)
+        bb_text = bb.fetch_page_content(url, max_chars=max_chars)
+        if bb_text:
+            return bb_text, "Browserbase Cloud"
+
+    if enable_jina_reader:
+        jina_text = fetch_via_jina_reader(url, max_chars=max_chars)
+        if jina_text:
+            return jina_text, "Jina Reader"
+
+    return "", ""

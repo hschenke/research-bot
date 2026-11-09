@@ -110,6 +110,16 @@ def _build_synthesis_prompts(
         if job.focus_instructions.strip()
         else "Keine zusätzlichen Freitext-Vorgaben."
     )
+    if cfg.is_top_x_query(job.topic, job.focus_instructions):
+        focus_block += (
+            "\n\n🏆 TOP-X / RANKING-VORGABE (SEHR WICHTIG):\n"
+            "Dies ist eine Top-X / Ranking-Anfrage! Erstelle im Hauptteil (`body_markdown`) als "
+            "zentrales Kernelement zwingend eine vollständige, saubere Markdown-Tabelle aller Top-X Einträge:\n"
+            "- Spalten: `| Rang | Name / Tool | Kategorie | Kernmerkmale & Kennzahlen | Preis / Modell | Quelle / Link |`\n"
+            "- Jeder Eintrag MUSS eine eigene durchnummerierte Zeile (1, 2, 3...) erhalten.\n"
+            "- Die Tabelle wird in der Web-App als interaktive, sortierbare Datentabelle bereitgestellt.\n"
+            "- Ergänze darunter bei Bedarf kurze Stichpunkte mit Details zu den Platzierungen."
+        )
 
     sys_prompt = render_prompt_template(
         cfg.prompts.synthesizer_system_prompt,

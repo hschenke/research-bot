@@ -19,28 +19,15 @@ from src.config.constants import (
     MAX_HTTP_REDIRECTS,
     MAX_WEB_PAGE_BYTES,
 )
+from src.config.settings import AppSettings
 from src.domain.exceptions import SSRFBlockedError, WebFetchError
+from src.research.browser_tools import fetch_fallback_web_content
 from src.security.ssrf_guard import DnsResolver, validate_safe_external_url
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_CONTENT_TYPES: tuple[str, ...] = (
-    "text/html",
-    "text/plain",
-    "application/xhtml+xml",
-)
-_NOISE_TAGS: tuple[str, ...] = (
-    "script",
-    "style",
-    "noscript",
-    "svg",
-    "iframe",
-    "nav",
-    "footer",
-    "header",
-    "aside",
-    "form",
-)
+_ALLOWED_CONTENT_TYPES: tuple[str, ...] = ("text/html", "text/plain", "application/xhtml+xml")
+_NOISE_TAGS: tuple[str, ...] = ("script", "style", "noscript", "svg", "iframe", "nav", "footer", "header", "aside", "form")
 _WHITESPACE_BLOCKS = re.compile(r"\n{3,}")
 
 
@@ -77,10 +64,16 @@ class SafeWebFetcher:
         connect_timeout: float = HTTP_CONNECT_TIMEOUT_SECONDS,
         read_timeout: float = HTTP_READ_TIMEOUT_SECONDS,
         max_bytes: int = MAX_WEB_PAGE_BYTES,
+        settings: AppSettings | None = None,
+        enable_jina_reader: bool = True,
+        enable_browserbase: bool = False,
     ) -> None:
         self._dns_resolver = dns_resolver
         self._timeout = (connect_timeout, read_timeout)
         self._max_bytes = max_bytes
+        self._settings = settings
+        self._enable_jina_reader = enable_jina_reader
+        self._enable_browserbase = enable_browserbase
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -95,46 +88,60 @@ class SafeWebFetcher:
             return validate_safe_external_url(url, dns_resolver=self._dns_resolver)
         return validate_safe_external_url(url)
 
-    def fetch_page(self, url: str) -> FetchedWebPage:
-        """Lädt eine einzelne URL inkl. sicherer Redirect-Verfolgung und Text-Aufbereitung."""
-        current_url = self._validate_url(url)
-
+    def _fetch_direct_http(self, current_url: str) -> FetchedWebPage:
         for _hop in range(MAX_HTTP_REDIRECTS + 1):
-            try:
-                with self._session.get(
-                    current_url,
-                    timeout=self._timeout,
-                    allow_redirects=False,
-                    stream=True,
-                ) as response:
-                    if response.status_code in {301, 302, 303, 307, 308}:
-                        location = response.headers.get("Location", "").strip()
-                        if not location:
-                            raise WebFetchError("Redirect ohne Zieladresse erhalten.")
-                        next_url = urljoin(current_url, location)
-                        current_url = self._validate_url(next_url)
-                        continue
+            with self._session.get(
+                current_url,
+                timeout=self._timeout,
+                allow_redirects=False,
+                stream=True,
+            ) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("Location", "").strip()
+                    if not location:
+                        raise WebFetchError("Redirect ohne Zieladresse erhalten.")
+                    next_url = urljoin(current_url, location)
+                    current_url = self._validate_url(next_url)
+                    continue
 
-                    if response.status_code != 200:
-                        raise WebFetchError(f"HTTP-Status {response.status_code} für '{current_url}'.")
+                if response.status_code != 200:
+                    raise WebFetchError(f"HTTP-Status {response.status_code} für '{current_url}'.")
 
-                    content_type = response.headers.get("Content-Type", "").lower()
-                    if content_type and not any(ct in content_type for ct in _ALLOWED_CONTENT_TYPES):
-                        raise WebFetchError(f"Nicht unterstützter Content-Type '{content_type}'.")
+                content_type = response.headers.get("Content-Type", "").lower()
+                if content_type and not any(ct in content_type for ct in _ALLOWED_CONTENT_TYPES):
+                    raise WebFetchError(f"Nicht unterstützter Content-Type '{content_type}'.")
 
-                    raw_bytes = self._read_bounded_body(response)
-                    encoding = response.encoding or "utf-8"
-                    decoded = raw_bytes.decode(encoding, errors="replace")
-                    title, clean_text = extract_clean_text_from_html(decoded)
-                    if not clean_text:
-                        raise WebFetchError("Kein verwertbarer Textinhalt gefunden.")
-                    return FetchedWebPage(url=current_url, title=title, text_content=clean_text)
-            except SSRFBlockedError:
-                raise
-            except requests.RequestException as exc:
+                raw_bytes = self._read_bounded_body(response)
+                encoding = response.encoding or "utf-8"
+                decoded = raw_bytes.decode(encoding, errors="replace")
+                title, clean_text = extract_clean_text_from_html(decoded)
+                if not clean_text:
+                    raise WebFetchError("Kein verwertbarer Textinhalt gefunden.")
+                return FetchedWebPage(url=current_url, title=title, text_content=clean_text)
+
+        raise WebFetchError(f"Zu viele Weiterleitungen (> {MAX_HTTP_REDIRECTS}) für '{current_url}'.")
+
+    def fetch_page(self, url: str) -> FetchedWebPage:
+        """Lädt eine einzelne URL inkl. Redirect-Prüfung und Cloud-Browser/Jina-Fallback."""
+        current_url = self._validate_url(url)
+        try:
+            return self._fetch_direct_http(current_url)
+        except SSRFBlockedError:
+            raise
+        except (WebFetchError, requests.RequestException) as exc:
+            fallback_text, engine = fetch_fallback_web_content(
+                url=current_url,
+                settings=self._settings,
+                enable_browserbase=self._enable_browserbase,
+                enable_jina_reader=self._enable_jina_reader,
+            )
+            if fallback_text:
+                host = urlparse(current_url).netloc or current_url
+                logger.info("Fallback-Abruf für '%s' via %s erfolgreich.", current_url, engine)
+                return FetchedWebPage(url=current_url, title=f"[{engine}] {host}", text_content=fallback_text)
+            if isinstance(exc, requests.RequestException):
                 raise WebFetchError(f"Netzwerkfehler beim Abruf von '{current_url}': {exc}") from exc
-
-        raise WebFetchError(f"Zu viele Weiterleitungen (> {MAX_HTTP_REDIRECTS}) für '{url}'.")
+            raise
 
     def _read_bounded_body(self, response: requests.Response) -> bytes:
         chunks: list[bytes] = []

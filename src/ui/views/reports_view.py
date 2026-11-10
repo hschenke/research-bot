@@ -54,6 +54,8 @@ def render_reports_view(
     )
 
     if selected_report is not None:
+        if st.query_params.get("job_id") != selected_report.job_id:
+            st.query_params["job_id"] = selected_report.job_id
         _render_single_report(
             report=selected_report,
             settings=settings,
@@ -142,7 +144,7 @@ def _render_single_report(
             st.rerun()
 
     with st.container(border=True):
-        render_markdown_with_interactive_tables(report.content_markdown)
+        render_markdown_with_interactive_tables(report.content_markdown, job_id=report.job_id)
 
 
 def _resend_report_email(

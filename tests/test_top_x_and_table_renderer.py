@@ -257,3 +257,56 @@ def test_briefing_block_includes_active_tools() -> None:
     )
     assert "Eingesetzte Recherche-Tools:" in briefing
     assert "🌐 Browserbase (Cloud-Headless aktiv)" in briefing
+
+
+def test_table_glossary_term_decoration() -> None:
+    from src.ui.table_glossary import decorate_cell_with_tooltips
+
+    # 1. Beachbreak
+    dec_bb = decorate_cell_with_tooltips("Beachbreak (Offen)")
+    assert "surf-tip-icon" in dec_bb
+    assert "surf-tip-pop" in dec_bb
+    assert "Sandbank" in dec_bb
+    assert dec_bb.startswith("Beachbreak <span class=")
+    assert dec_bb.endswith("(Offen)")
+
+    # 2. A-Frames Plural ohne Zerstörung des Wortes
+    dec_af = decorate_cell_with_tooltips("A-Frames (Felsgrund)")
+    assert dec_af.startswith("A-Frames <span class=")
+    assert dec_af.endswith("(Felsgrund)")
+
+    # 3. Windwellen Plural
+    dec_ww = decorate_cell_with_tooltips("Windwellen")
+    assert dec_ww.startswith("Windwellen <span class=")
+
+    # 4. Unbekannte Wörter bleiben unverändert
+    assert decorate_cell_with_tooltips("Alicante") == "Alicante"
+
+
+def test_html_table_rendering_and_sorting() -> None:
+    from src.ui.table_renderer import _build_html_table, _sort_dataframe
+
+    df = pd.DataFrame({
+        "Rang": [1, 2, 3],
+        "Strand": ["San Juan", "Guardamar", "Levante"],
+        "Wellenhöhe max. (m)": [2.0, 2.5, 1.8],
+        "Wellentyp": ["Beachbreak", "A-Frames", "Sanfte Wellen"],
+    })
+    # 1. Sortierung nach Wellenhöhe absteigend
+    sorted_df = _sort_dataframe(df, "Wellenhöhe max. (m)", "desc")
+    assert list(sorted_df["Strand"]) == ["Guardamar", "San Juan", "Levante"]
+
+    # 2. HTML-Generierung enthält Sortierlinks und Tooltips
+    html_output = _build_html_table(
+        df=sorted_df,
+        url_columns=set(),
+        sort_col="Wellenhöhe max. (m)",
+        sort_dir="desc",
+        job_id="job_test_123",
+    )
+    assert '<table class="surf-tbl">' in html_output
+    assert "tbl_sort=Wellenh%C3%B6he" in html_output or "tbl_sort=Wellenh" in html_output
+    assert "surf-sort-arrow" in html_output
+    assert "surf-tip-icon" in html_output
+    assert "2.50 m" in html_output
+

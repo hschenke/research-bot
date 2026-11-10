@@ -112,13 +112,14 @@ def _build_synthesis_prompts(
     )
     if cfg.is_top_x_query(job.topic, job.focus_instructions):
         focus_block += (
-            "\n\n🏆 TOP-X / RANKING-VORGABE (SEHR WICHTIG):\n"
+            "\n\n🏆 TOP-X / RANKING-VORGABE – SORTIERBARE VERGLEICHSTABELLE (SEHR WICHTIG):\n"
             "Dies ist eine Top-X / Ranking-Anfrage! Erstelle im Hauptteil (`body_markdown`) als "
-            "zentrales Kernelement zwingend eine vollständige, saubere Markdown-Tabelle aller Top-X Einträge:\n"
-            "- Spalten: `| Rang | Name / Tool | Kategorie | Kernmerkmale & Kennzahlen | Preis / Modell | Quelle / Link |`\n"
-            "- Jeder Eintrag MUSS eine eigene durchnummerierte Zeile (1, 2, 3...) erhalten.\n"
-            "- Die Tabelle wird in der Web-App als interaktive, sortierbare Datentabelle bereitgestellt.\n"
-            "- Ergänze darunter bei Bedarf kurze Stichpunkte mit Details zu den Platzierungen."
+            "zentrales allererstes Element eine saubere, hochgradig scannbare Vergleichstabelle mit THEMEN-SPEZIFISCHEN Spalten:\n"
+            "- THEMEN-METRIK STATT PROSA: Definiere für das Fachthema eine eigene, sortierbare Kennzahlen-Spalte mit konkreten Werten/Stufen "
+            "(z. B. bei Wellen/Surfen: `Wellenstärke / Höhe` & `Spot-Typ & Level`; bei Software: `Preismodell / Score`; bei Autos/Tech: `Leistung / Reichweite`).\n"
+            "- ULTRA-KOMPAKTE ZELLEN: Maximal 1–4 Wörter oder Zahlen mit Einheit pro Zelle – KEINE Fließtextsätze in Tabellenzellen, "
+            "damit die Spalten in der Benutzeroberfläche sinnvoll per Klick sortiert werden können!\n"
+            "- DETAIL-TEXT UNTER DER TABELLE: Ausführliche Erläuterungen und Fließtexte folgen erst nach der Tabelle in den Abschnitten darunter."
         )
 
     sys_prompt = render_prompt_template(
@@ -147,9 +148,9 @@ def _build_synthesis_prompts(
     if cfg.is_top_x_query(job.topic, job.focus_instructions):
         user_prompt += (
             "\n\n🚨 STRIKTE PRIORITÄT FÜR DIESE TOP-X-ANFRAGE: "
-            "Erstelle in `body_markdown` ZWINGEND als allererstes Element eine saubere Markdown-Tabelle aller Top-Einträge "
-            "(| Rang | Name / Eintrag | Kernfakten & Details | Quelle |). "
-            "Verwende KEINE reine Bulletpoint-Liste als Ersatz für die geforderte Tabelle!"
+            "Erstelle in `body_markdown` ZWINGEND als allererstes Element eine saubere, kompakte Markdown-Tabelle mit "
+            "themenspezifischen Sortier- und Kennzahlen-Spalten (z. B. Wellenstärke, Preis, Score, Leistung je nach Thema). "
+            "Verwende KEINE Fließtextsätze in den Tabellenzellen und KEINE reine Bulletpoint-Liste als Tabellenersatz!"
         )
     return sys_prompt, user_prompt, fmt_preset.omit_wrapper_sections
 

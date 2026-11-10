@@ -185,16 +185,16 @@ def test_safe_web_fetcher_fallback_on_http_error() -> None:
 def test_auto_generate_top_x_table_from_bullets() -> None:
     bullet_markdown = (
         "## 1. Top-Auswahl der Strände\n\n"
-        "* **Playa de San Juan (Alicante):** Beliebter Sandstrand ([Surfline](https://surfline.com)).\n"
+        "* **Playa de San Juan (Alicante):** Urbaner Hauptstrand mit starken Wellen ([Surfline](https://surfline.com)).\n"
         "* **Playa de Guardamar:** Exponierte Wellen ([Windfinder](https://windfinder.com)).\n\n"
         "## 2. Wetterbedingungen\n"
         "- Starker Wind im Winter."
     )
     table = auto_generate_top_x_table(bullet_markdown)
     assert table is not None
-    assert "| Rang | Name / Eintrag |" in table
-    assert "| 1 | Playa de San Juan (Alicante) |" in table
-    assert "| 2 | Playa de Guardamar |" in table
+    assert "| Rang | Strand / Spot | Ort | Wellenstärke / Typ |" in table
+    assert "| 1 | Playa de San Juan | Alicante |" in table
+    assert "| 2 | Playa de Guardamar | - |" in table
     assert "[Surfline](https://surfline.com)" in table
 
 

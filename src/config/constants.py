@@ -78,7 +78,7 @@ DEFAULT_REPORTS_LIST_LIMIT: int = 50
 DEFAULT_MAX_CONCURRENT_LOCAL_JOBS: int = _DEFAULT_DOMAIN.max_concurrent_local_jobs
 
 # --- Security & Authentifizierung ---
-ADMIN_TOKEN_MAX_AGE_SECONDS: int = 86_400  # 24 Stunden
+ADMIN_TOKEN_MAX_AGE_SECONDS: int = 2_592_000  # 30 Tage persistente Session
 CLOCK_SKEW_TOLERANCE_SECONDS: int = 60
 MAX_FAILED_LOGIN_ATTEMPTS: int = 5
 LOGIN_LOCKOUT_SECONDS: int = 300  # 5 Minuten Sperre nach Fehlversuchen

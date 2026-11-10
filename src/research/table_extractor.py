@@ -32,8 +32,8 @@ def _detect_topic_domain(text: str) -> str:
     return "general"
 
 
-def _extract_surf_row(name: str, category: str, clean: str, link: str) -> list[str]:
-    """Extrahiert sortierbare Surf-Kennzahlen: numerische Wellenhöhe, sortierbare Level & Saisons."""
+def _extract_surf_row(name: str, category: str, clean: str) -> list[str]:
+    """Extrahiert sortierbare Surf-Kennzahlen: numerische Wellenhöhe, Fachbegriffe mit ❓ und Level."""
     m_meter = re.search(r"(\d+[,\.]\d*)\s*m", clean.lower())
     if m_meter:
         height = float(m_meter.group(1).replace(",", "."))
@@ -48,18 +48,19 @@ def _extract_surf_row(name: str, category: str, clean: str, link: str) -> list[s
     else:
         height = 1.5
 
+    # Fachbegriffe mit Fragezeichen versehen für interaktive Tooltips / Glossar
     if "a-frame" in clean.lower() or "steil" in clean.lower():
-        w_type = "A-Frames (Felsgrund)"
+        w_type = "A-Frames ❓ (Felsgrund)"
     elif "wind" in clean.lower() or "kite" in clean.lower():
-        w_type = "Windwellen"
+        w_type = "Windwellen ❓"
     elif "geschützt" in clean.lower() or "sauber" in clean.lower():
         w_type = "Sanfte Wellen (Geschützt)"
     elif "reef" in clean.lower() or "riff" in clean.lower():
-        w_type = "Reefbreak"
+        w_type = "Reefbreak ❓"
     elif "ungehindert" in clean.lower() or "exponiert" in clean.lower():
-        w_type = "Beachbreak (Offen)"
+        w_type = "Beachbreak ❓ (Offen)"
     else:
-        w_type = "Beachbreak"
+        w_type = "Beachbreak ❓"
 
     if "shortboard" in clean.lower() or "profi" in clean.lower() or "experte" in clean.lower():
         level = "Level 3 - Experten / Shortboard"
@@ -85,30 +86,18 @@ def _extract_surf_row(name: str, category: str, clean: str, link: str) -> list[s
     else:
         season = "3 - Herbst / Winter"
 
-    if "levante" in clean.lower() or "ost" in clean.lower():
-        wind = "Levante (Ost/SO)"
-    elif "ne-" in clean.lower() or "nord" in clean.lower():
-        wind = "Nordost (Levanter)"
-    elif "west" in clean.lower() or "lebeche" in clean.lower():
-        wind = "Lebeche (SW)"
-    else:
-        wind = "Levante / Ost"
-
-    return [name, category, f"{height:.1f}", w_type, level, season, wind, link]
+    return [name, category, f"{height:.1f}", w_type, level, season]
 
 
 def _extract_item_row(name_raw: str, details_raw: str, domain: str) -> list[str]:
-    """Extrahiert kompakte, themenspezifische Spaltenwerte aus einem Stichpunkteintrag."""
+    """Extrahiert kompakte, themenspezifische Spaltenwerte aus einem Stichpunkteintrag ohne Quellenspalte."""
     m_name = re.match(r"^([^(]+?)\s*\(([^)]+)\)$", name_raw)
     name = m_name.group(1).strip() if m_name else name_raw.strip()
     category = m_name.group(2).strip() if m_name else "-"
-
-    link_m = _LINK_PATTERN.search(details_raw)
-    link = f"[{link_m.group(1).split()[0]}]({link_m.group(2)})" if link_m else "-"
     clean = _LINK_STRIP_PATTERN.sub("", details_raw).strip(" ().")
 
     if domain == "surf":
-        return _extract_surf_row(name, category, clean, link)
+        return _extract_surf_row(name, category, clean)
 
     if domain == "tool":
         metric = "-"
@@ -118,16 +107,16 @@ def _extract_item_row(name_raw: str, details_raw: str, domain: str) -> list[str]
         elif any(w in clean.lower() for w in ("kostenlos", "free", "freemium", "open source")):
             metric = "Freemium" if "freemium" in clean.lower() else "Kostenlos"
 
-        feature = clean.split(",")[0][:45].strip()
-        return [name, category, metric, feature, link]
+        feature = clean.split(",")[0][:40].strip()
+        return [name, category, metric, feature]
 
-    first_clause = clean.split(",")[0][:40].strip()
-    rest = clean[len(first_clause) :].strip(" ,;.-")[:40] or "-"
-    return [name, category, first_clause or "-", rest, link]
+    first_clause = clean.split(",")[0][:35].strip()
+    rest = clean[len(first_clause) :].strip(" ,;.-")[:35] or "-"
+    return [name, category, first_clause or "-", rest]
 
 
 def auto_generate_top_x_table(text: str) -> str | None:
-    """Wandelt Aufzählungen eines Rankings automatisch in eine sortierbare Markdown-Tabelle um."""
+    """Wandelt Aufzählungen eines Rankings automatisch in eine kompakte, sortierbare Markdown-Tabelle um."""
     sections = re.split(r"\n(?=##\s+)", text)
     matches: list[tuple[str, str]] = []
 
@@ -163,13 +152,11 @@ def auto_generate_top_x_table(text: str) -> str | None:
             "Wellentyp",
             "Level",
             "Beste Saison",
-            "Wind",
-            "Quelle",
         ]
     elif domain == "tool":
-        headers = ["Rang", "Tool / Modell", "Kategorie", "Preismodell / Score", "Hauptmerkmal & Stärke", "Quelle"]
+        headers = ["Rang", "Tool / Modell", "Kategorie", "Preismodell / Score", "Hauptmerkmal & Stärke"]
     else:
-        headers = ["Rang", "Name / Eintrag", "Ort / Kategorie", "Kernmerkmal / Metrik", "Eignung / Besonderheit", "Quelle"]
+        headers = ["Rang", "Name / Eintrag", "Ort / Kategorie", "Kernmerkmal / Metrik", "Eignung / Besonderheit"]
 
     separator = [" :--- " for _ in headers]
     rows = [

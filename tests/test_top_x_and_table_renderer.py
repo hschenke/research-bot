@@ -185,18 +185,38 @@ def test_safe_web_fetcher_fallback_on_http_error() -> None:
 def test_auto_generate_top_x_table_from_bullets() -> None:
     bullet_markdown = (
         "## 1. Top-Auswahl der Strände\n\n"
-        "* **Playa de San Juan (Alicante):** Urbaner Hauptstrand mit starken Wellen (2.0 m) für fortgeschrittene Surfer ([Surfline](https://surfline.com)).\n"
+        "* **Playa de San Juan (Alicante):** Urbaner Hauptstrand mit starken Beachbreak-Wellen (2.0 m) für fortgeschrittene Surfer ([Surfline](https://surfline.com)).\n"
         "* **Playa de Guardamar:** Exponierte Wellen bis 2.5 m für Experten ([Windfinder](https://windfinder.com)).\n\n"
         "## 2. Wetterbedingungen\n"
         "- Starker Wind im Winter."
     )
     table = auto_generate_top_x_table(bullet_markdown)
     assert table is not None
-    assert "| Rang | Strand / Spot | Ort | Wellenhöhe max. (m) | Wellentyp | Level | Beste Saison | Wind | Quelle |" in table
+    assert "| Rang | Strand / Spot | Ort | Wellenhöhe max. (m) | Wellentyp | Level | Beste Saison |" in table
     assert "| 1 | Playa de San Juan | Alicante | 2.0 |" in table
+    assert "Beachbreak ❓" in table
     assert "| 2 | Playa de Guardamar | - | 2.5 |" in table
     assert "Level 3 - Experten" in table
-    assert "[Surfline](https://surfline.com)" in table
+    assert "Quelle" not in table
+
+
+def test_compact_column_filter_strips_sources() -> None:
+    from src.ui.table_renderer import _apply_compact_column_filter
+    df_raw = pd.DataFrame({
+        "Rang": [1],
+        "Spot": ["Playa San Juan"],
+        "Ort": ["Alicante"],
+        "Welle": [2.0],
+        "Typ": ["Beachbreak ❓"],
+        "Level": ["Level 2"],
+        "Saison": ["Herbst"],
+        "Wind": ["Levante"],
+        "Quelle": ["https://surfline.com"],
+    })
+    filtered = _apply_compact_column_filter(df_raw, table_idx=1)
+    assert "Quelle" not in filtered.columns
+    assert "Wind" not in filtered.columns
+    assert "Spot" in filtered.columns
 
 
 def test_table_sorting_numeric_and_categorical() -> None:

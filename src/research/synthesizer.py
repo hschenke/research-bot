@@ -153,7 +153,9 @@ def _build_synthesis_prompts(
             "1. Metriken / Messwerte (z. B. Wellenhöhe in m, Preis in €, Score, Bewertung) MÜSSEN als reine, sortierbare Zahlenwerte formatiert sein (z. B. Spaltenname `Wellenhöhe max. (m)` mit Werten wie `2.5`, `2.0`, `1.8`), KEINE Fließtextsätze in Messwert-Spalten!\n"
             "2. Spalten für Eignung / Level / Schwierigkeit MÜSSEN mit sortierbaren Stufen nummeriert sein (z. B. `Level 1 - Einsteiger`, `Level 2 - Fortgeschrittene`, `Level 3 - Experten`).\n"
             "3. Zeit- / Saisonspalten MÜSSEN in natürlicher Reihenfolge sortierbar sein (z. B. `1 - Frühling`, `2 - Sommer`, `3 - Herbst`, `4 - Winter` bzw. `3 - Herbst / Winter`).\n"
-            "4. KEINE Fließtextsätze in den Tabellenzellen. Quelle immer in der letzten Spalte als Markdown-Link `[Name](URL)`."
+            "4. KEINE Quellenspalte in die Tabelle aufnehmen (Quellenlinks gehören ausschließlich in die Stichpunkte des Textes und das Verzeichnis).\n"
+            "5. Fachbegriffe (z. B. Beachbreak ❓, A-Frames ❓) mit einem angehängten `❓` versehen.\n"
+            "6. KLARES DEUTSCH OHNE DENGLISCH: Verwende natürliches, korrektes Deutsch (z. B. 'Hauptwellen-Saison' oder 'Hauptsaison für Wellen', NIEMALS Kunstwörter wie 'Hauptswell-Saison')."
         )
     return sys_prompt, user_prompt, fmt_preset.omit_wrapper_sections
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-from typing import Any
 
 import streamlit as st
 
@@ -18,7 +17,6 @@ from src.notifications.email_renderer import (
     render_report_email_html,
 )
 from src.notifications.notifier import EmailNotifier
-from src.research.llm_helpers import normalize_preferred_model
 from src.storage.base_repository import ResearchRepository
 from src.ui.date_formatter import format_datetime_german
 from src.ui.table_renderer import render_markdown_with_interactive_tables
@@ -65,16 +63,29 @@ def render_reports_view(
         )
 
 
-def _render_kpi_card(column: Any, label: str, value: str) -> None:
-    """Rendert eine robuste KPI-Karte via Border-Container ohne anfällige dynamische Vite-Chunks."""
-    safe_val = html.escape(value)
-    safe_lbl = html.escape(label)
-    with column.container(border=True):
-        st.caption(safe_lbl)
-        st.markdown(
-            f"<div style='font-size: 1.25rem; font-weight: 600; line-height: 1.2;'>{safe_val}</div>",
-            unsafe_allow_html=True,
-        )
+def _render_metadata_badge_bar(report: ResearchReport, cfg: DomainConfig) -> None:
+    """Rendert eine kompakte, elegante Metadaten-Leiste ohne klobige Boxen."""
+    depth_label = html.escape(cfg.get_depth_profile(report.depth).label)
+    duration = html.escape(format_duration_human(report.duration_seconds))
+    sources_count = len(report.citations)
+    created_at = html.escape(format_datetime_german(report.created_at))
+
+    st.markdown(
+        f"""
+        <div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+                    background: rgba(127, 127, 127, 0.08); border: 1px solid rgba(127, 127, 127, 0.16);
+                    border-radius: 8px; padding: 8px 14px; margin: 0.5rem 0 1rem 0; font-size: 0.88rem;">
+            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Tiefe</span> <b>{depth_label}</b></div>
+            <div style="opacity: 0.25;">•</div>
+            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Laufzeit</span> <b>⏱️ {duration}</b></div>
+            <div style="opacity: 0.25;">•</div>
+            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Quellen</span> <b>📚 {sources_count} verifiziert</b></div>
+            <div style="opacity: 0.25;">•</div>
+            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Erstellt</span> <b>🗓️ {created_at}</b></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_single_report(
@@ -85,16 +96,7 @@ def _render_single_report(
     cfg: DomainConfig,
 ) -> None:
     st.divider()
-    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-    _render_kpi_card(col_m1, "Tiefe", cfg.get_depth_profile(report.depth).label)
-    _render_kpi_card(col_m2, "Laufzeit", format_duration_human(report.duration_seconds))
-    _render_kpi_card(col_m3, "Verifizierte Quellen", str(len(report.citations)))
-    _render_kpi_card(col_m4, "Erstellt", format_datetime_german(report.created_at))
-    safe_model = normalize_preferred_model(
-        report.model_used or cfg.default_model,
-        allowed_models=cfg.available_models,
-    )
-    st.caption(f"🤖 Erstellt mit Modell: `{safe_model}`")
+    _render_metadata_badge_bar(report, cfg)
 
     app_url = build_report_app_url(
         base_url=settings.streamlit_app_url,

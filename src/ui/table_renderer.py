@@ -2,153 +2,109 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from src.research.table_extractor import auto_generate_top_x_table
+from src.ui.table_parser import (
+    clean_cell_content as _clean_cell_content,
+)
+from src.ui.table_parser import (
+    is_markdown_separator_row,
+    is_markdown_table_row,
+    parse_markdown_table_raw,
+    split_markdown_by_tables,
+)
 
-_SEPARATOR_CELL_PATTERN = re.compile(r"^:?-+:?$")
-_MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
-_PLAIN_URL_PATTERN = re.compile(r"^https?://[^\s]+$")
+__all__ = [
+    "_clean_cell_content",
+    "is_markdown_separator_row",
+    "is_markdown_table_row",
+    "parse_markdown_table",
+    "render_markdown_with_interactive_tables",
+    "split_markdown_by_tables",
+]
 
-
-def is_markdown_table_row(line: str) -> bool:
-    """Prüft, ob eine Zeile eine typische Markdown-Tabellenzeile darstellt."""
-    s = line.strip()
-    return bool(s.startswith("|") and s.endswith("|") and "|" in s[1:-1])
-
-
-def is_markdown_separator_row(line: str) -> bool:
-    """Prüft, ob eine Zeile die Markdown-Tabellen-Trennlinie (|---|---|) darstellt."""
-    s = line.strip()
-    if not (s.startswith("|") and s.endswith("|")):
-        return False
-    cells = [c.strip() for c in s[1:-1].split("|")]
-    return len(cells) >= 1 and all(bool(_SEPARATOR_CELL_PATTERN.match(c)) for c in cells if c)
-
-
-def _clean_cell_content(cell: str) -> tuple[str, str | None]:
-    """Bereinigt Markdown-Formatierungen in einer Zelle und extrahiert ggf. Hyperlinks."""
-    s = cell.strip()
-    link_match = _MARKDOWN_LINK_PATTERN.search(s)
-    if link_match:
-        return link_match.group(2), link_match.group(1)
-    if _PLAIN_URL_PATTERN.match(s):
-        return s, "URL"
-
-    cleaned = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
-    cleaned = re.sub(r"\*([^*]+)\*", r"\1", cleaned)
-    cleaned = cleaned.replace("`", "")
-    return cleaned, None
+_NON_SORTABLE_COLUMN_KEYWORDS = ("quelle", "link", "url", "ref", "referenz", "webseite")
 
 
-def _deduplicate_headers(raw_headers: list[str]) -> list[str]:
-    """Erzeugt eindeutige Spaltenbezeichnungen aus den Roh-Tabellenköpfen."""
-    headers = [re.sub(r"\*\*([^*]+)\*\*", r"\1", h).strip() for h in raw_headers]
-    seen_headers: dict[str, int] = {}
-    clean_headers: list[str] = []
-    for h in headers:
-        name = h or "Spalte"
-        if name in seen_headers:
-            seen_headers[name] += 1
-            clean_headers.append(f"{name} ({seen_headers[name]})")
-        else:
-            seen_headers[name] = 1
-            clean_headers.append(name)
-    return clean_headers
+def _build_column_configs(df: pd.DataFrame, url_columns: set[str]) -> dict[str, Any]:
+    """Konfiguriert Streamlit-Spaltentypen (Links, Ganzzahlen, Dezimalwerte) für optimales Anzeigen."""
+    column_configs: dict[str, Any] = {}
+    for col in df.columns:
+        if col in url_columns:
+            column_configs[col] = st.column_config.LinkColumn(
+                col,
+                display_text="🔗 Link",
+                help="Quellenlink zum Originalartikel",
+            )
+            continue
+
+        if pd.api.types.is_integer_dtype(df[col]):
+            column_configs[col] = st.column_config.NumberColumn(col, format="%d")
+        elif pd.api.types.is_float_dtype(df[col]):
+            col_lower = col.lower()
+            if "(m)" in col_lower or "meter" in col_lower or "höhe" in col_lower:
+                column_configs[col] = st.column_config.NumberColumn(col, format="%.1f m")
+            elif "€" in col or "eur" in col_lower or "preis" in col_lower:
+                column_configs[col] = st.column_config.NumberColumn(col, format="%.2f €")
+            elif "%" in col:
+                column_configs[col] = st.column_config.NumberColumn(col, format="%.1f %%")
+            else:
+                column_configs[col] = st.column_config.NumberColumn(col, format="%.2f")
+
+    return column_configs
 
 
 def parse_markdown_table(lines: list[str]) -> tuple[pd.DataFrame, dict[str, Any]] | None:
-    """Wandelt Markdown-Tabellenzeilen in einen typisierten DataFrame mit Sortier- & Link-Konfiguration um."""
-    if len(lines) < 3 or not is_markdown_separator_row(lines[1]):
+    """Wandelt Markdown-Tabellenzeilen in einen typisierten DataFrame mit Spaltenkonfigurationen um."""
+    parsed = parse_markdown_table_raw(lines)
+    if parsed is None:
         return None
-
-    raw_headers = [c.strip() for c in lines[0].strip()[1:-1].split("|")]
-    clean_headers = _deduplicate_headers(raw_headers)
-    if not clean_headers or all(not h for h in clean_headers):
-        return None
-
-    rows: list[list[str]] = []
-    url_columns: set[str] = set()
-
-    for line in lines[2:]:
-        if not is_markdown_table_row(line):
-            continue
-        cells = [c.strip() for c in line.strip()[1:-1].split("|")]
-        if len(cells) < len(clean_headers):
-            cells += [""] * (len(clean_headers) - len(cells))
-        elif len(cells) > len(clean_headers):
-            cells = cells[: len(clean_headers)]
-
-        cleaned_row: list[str] = []
-        for idx, cell in enumerate(cells):
-            col_name = clean_headers[idx]
-            cleaned_val, link_label = _clean_cell_content(cell)
-            if link_label is not None:
-                url_columns.add(col_name)
-            cleaned_row.append(cleaned_val)
-        rows.append(cleaned_row)
-
-    if not rows:
-        return None
-
-    df = pd.DataFrame(rows, columns=clean_headers)
+    df, url_columns = parsed
     column_configs = _build_column_configs(df, url_columns)
     return df, column_configs
 
 
-def _build_column_configs(df: pd.DataFrame, url_columns: set[str]) -> dict[str, Any]:
-    """Konfiguriert Streamlit-Spaltentypen (Links, Ganzzahlen, Dezimalwerte) für korrektes Sortieren."""
-    column_configs: dict[str, Any] = {}
-    for col in df.columns:
-        if col in url_columns:
-            column_configs[col] = st.column_config.LinkColumn(col, display_text="🔗 Link")
-            continue
+def _render_sorting_bar(df: pd.DataFrame, table_idx: int) -> pd.DataFrame:
+    """Rendert eine übersichtliche Sortier-Leiste und schließt Quellenlinks strikt vom Sortieren aus."""
+    sortable_cols = [c for c in df.columns if c.lower() not in _NON_SORTABLE_COLUMN_KEYWORDS]
+    if not sortable_cols:
+        return df
 
-        try:
-            numeric_series = pd.to_numeric(df[col], errors="raise")
-            df[col] = numeric_series
-            if pd.api.types.is_integer_dtype(df[col]):
-                column_configs[col] = st.column_config.NumberColumn(col, format="%d")
-            else:
-                column_configs[col] = st.column_config.NumberColumn(col, format="%.2f")
-        except (ValueError, TypeError):
-            pass
-    return column_configs
+    default_idx = 0
+    for idx, c in enumerate(sortable_cols):
+        if any(kw in c.lower() for kw in ("höhe", "score", "metrik", "wert", "preis")):
+            default_idx = idx
+            break
 
+    c_select, c_order = st.columns([3, 2])
+    with c_select:
+        selected_col = st.selectbox(
+            "↕️ Sortieren nach:",
+            options=sortable_cols,
+            index=default_idx,
+            key=f"tbl_sort_{table_idx}",
+            help="Wähle eine Kennzahl oder Eigenschaft zum Sortieren (Quellen-Links sind bewusst ausgeschlossen).",
+        )
 
-def split_markdown_by_tables(markdown_text: str) -> list[tuple[str, Any]]:
-    """Zerlegt Markdown-Text in alternierende Abschnitte: ('text', str) und ('table', list[str])."""
-    lines = markdown_text.splitlines()
-    blocks: list[tuple[str, Any]] = []
-    current_text: list[str] = []
-    i = 0
+    is_metric_descending = any(kw in selected_col.lower() for kw in ("höhe", "score", "wert", "meter", "stark"))
+    with c_order:
+        sort_order = st.radio(
+            "Reihenfolge:",
+            options=["Absteigend ⬇️", "Aufsteigend ⬆️"],
+            index=0 if is_metric_descending else 1,
+            horizontal=True,
+            key=f"tbl_order_{table_idx}",
+        )
 
-    while i < len(lines):
-        line = lines[i]
-        if is_markdown_table_row(line) and i + 1 < len(lines) and is_markdown_separator_row(lines[i + 1]):
-            if current_text:
-                blocks.append(("text", "\n".join(current_text)))
-                current_text = []
-
-            table_lines = [line, lines[i + 1]]
-            i += 2
-            while i < len(lines) and is_markdown_table_row(lines[i]):
-                table_lines.append(lines[i])
-                i += 1
-            blocks.append(("table", table_lines))
-            continue
-
-        current_text.append(line)
-        i += 1
-
-    if current_text:
-        blocks.append(("text", "\n".join(current_text)))
-
-    return blocks
+    ascending = sort_order == "Aufsteigend ⬆️"
+    try:
+        return df.sort_values(by=selected_col, ascending=ascending)
+    except Exception:
+        return df
 
 
 def render_markdown_with_interactive_tables(content_markdown: str) -> None:
@@ -170,25 +126,33 @@ def render_markdown_with_interactive_tables(content_markdown: str) -> None:
             st.markdown(content_markdown)
             return
 
+    table_counter = 0
     for block_type, content in blocks:
         if block_type == "text":
             if str(content).strip():
                 st.markdown(content)
         elif block_type == "table":
+            table_counter += 1
             table_lines = content
-            result = parse_markdown_table(table_lines)
+            result = parse_markdown_table_raw(table_lines)
             if result is None:
                 st.markdown("\n".join(table_lines))
                 continue
 
-            df, col_configs = result
+            df, url_columns = result
+            col_configs = _build_column_configs(df, url_columns)
+            sorted_df = _render_sorting_bar(df, table_counter)
+
             st.dataframe(
-                df,
+                sorted_df,
                 use_container_width=True,
                 hide_index=True,
                 column_config=col_configs,
             )
-            st.caption("💡 *Spaltenköpfe anklicken zum Sortieren (Rang, Name, Werte) · Vollbild & Suche via Tabelle oben rechts.*")
+            st.caption(
+                "💡 *Gezielte Sortierung über die Leiste oben (Quelle ausgeschlossen) · "
+                "Spaltenköpfe anklickbar · Vollbild & Suche oben rechts im Tabellenfenster.*"
+            )
             raw_table_md = "\n".join(table_lines)
             with st.expander("📋 Reine Markdown-Tabelle anzeigen", expanded=False):
                 st.markdown(raw_table_md)

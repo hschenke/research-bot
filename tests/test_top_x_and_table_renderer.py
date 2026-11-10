@@ -185,17 +185,43 @@ def test_safe_web_fetcher_fallback_on_http_error() -> None:
 def test_auto_generate_top_x_table_from_bullets() -> None:
     bullet_markdown = (
         "## 1. Top-Auswahl der Strände\n\n"
-        "* **Playa de San Juan (Alicante):** Urbaner Hauptstrand mit starken Wellen ([Surfline](https://surfline.com)).\n"
-        "* **Playa de Guardamar:** Exponierte Wellen ([Windfinder](https://windfinder.com)).\n\n"
+        "* **Playa de San Juan (Alicante):** Urbaner Hauptstrand mit starken Wellen (2.0 m) für fortgeschrittene Surfer ([Surfline](https://surfline.com)).\n"
+        "* **Playa de Guardamar:** Exponierte Wellen bis 2.5 m für Experten ([Windfinder](https://windfinder.com)).\n\n"
         "## 2. Wetterbedingungen\n"
         "- Starker Wind im Winter."
     )
     table = auto_generate_top_x_table(bullet_markdown)
     assert table is not None
-    assert "| Rang | Strand / Spot | Ort | Wellenstärke / Typ |" in table
-    assert "| 1 | Playa de San Juan | Alicante |" in table
-    assert "| 2 | Playa de Guardamar | - |" in table
+    assert "| Rang | Strand / Spot | Ort | Wellenhöhe max. (m) | Wellentyp | Level | Beste Saison | Wind | Quelle |" in table
+    assert "| 1 | Playa de San Juan | Alicante | 2.0 |" in table
+    assert "| 2 | Playa de Guardamar | - | 2.5 |" in table
+    assert "Level 3 - Experten" in table
     assert "[Surfline](https://surfline.com)" in table
+
+
+def test_table_sorting_numeric_and_categorical() -> None:
+    table_lines = [
+        "| Rang | Strand / Spot | Ort | Wellenhöhe max. (m) | Level | Beste Saison | Quelle |",
+        "|---|---|---|---|---|---|---|",
+        "| 1 | Playa de San Juan | Alicante | 2.0 | Level 2 - Fortgeschrittene | 3 - Herbst / Winter | [Link](https://a.com) |",
+        "| 2 | Playa de Guardamar | Guardamar | 2.5 | Level 3 - Experten | 3 - Herbst / Winter | [Link](https://b.com) |",
+        "| 3 | Playa de Levante | Calpe | 1.8 | Level 1 - Einsteiger | 1 - Frühling | [Link](https://c.com) |",
+    ]
+    res = parse_markdown_table(table_lines)
+    assert res is not None
+    df, _configs = res
+
+    # 1. Numerische Sortierung nach Wellenhöhe absteigend
+    df_by_wave = df.sort_values(by="Wellenhöhe max. (m)", ascending=False)
+    assert list(df_by_wave["Strand / Spot"]) == ["Playa de Guardamar", "Playa de San Juan", "Playa de Levante"]
+
+    # 2. Kategorische Sortierung nach Level aufsteigend
+    df_by_level = df.sort_values(by="Level", ascending=True)
+    assert list(df_by_level["Strand / Spot"]) == ["Playa de Levante", "Playa de San Juan", "Playa de Guardamar"]
+
+    # 3. Saison-Sortierung aufsteigend (Frühling vor Herbst)
+    df_by_season = df.sort_values(by="Beste Saison", ascending=True)
+    assert list(df_by_season["Strand / Spot"])[0] == "Playa de Levante"
 
 
 def test_briefing_block_includes_active_tools() -> None:

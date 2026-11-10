@@ -148,9 +148,12 @@ def _build_synthesis_prompts(
     if cfg.is_top_x_query(job.topic, job.focus_instructions):
         user_prompt += (
             "\n\n🚨 STRIKTE PRIORITÄT FÜR DIESE TOP-X-ANFRAGE: "
-            "Erstelle in `body_markdown` ZWINGEND als allererstes Element eine saubere, kompakte Markdown-Tabelle mit "
-            "themenspezifischen Sortier- und Kennzahlen-Spalten (z. B. Wellenstärke, Preis, Score, Leistung je nach Thema). "
-            "Verwende KEINE Fließtextsätze in den Tabellenzellen und KEINE reine Bulletpoint-Liste als Tabellenersatz!"
+            "Erstelle in `body_markdown` ZWINGEND als allererstes Element eine saubere, kompakte Markdown-Tabelle.\n"
+            "WICHTIGE REGELN FÜR DIE TABELLENSPALTEN & SORTIERUNG:\n"
+            "1. Metriken / Messwerte (z. B. Wellenhöhe in m, Preis in €, Score, Bewertung) MÜSSEN als reine, sortierbare Zahlenwerte formatiert sein (z. B. Spaltenname `Wellenhöhe max. (m)` mit Werten wie `2.5`, `2.0`, `1.8`), KEINE Fließtextsätze in Messwert-Spalten!\n"
+            "2. Spalten für Eignung / Level / Schwierigkeit MÜSSEN mit sortierbaren Stufen nummeriert sein (z. B. `Level 1 - Einsteiger`, `Level 2 - Fortgeschrittene`, `Level 3 - Experten`).\n"
+            "3. Zeit- / Saisonspalten MÜSSEN in natürlicher Reihenfolge sortierbar sein (z. B. `1 - Frühling`, `2 - Sommer`, `3 - Herbst`, `4 - Winter` bzw. `3 - Herbst / Winter`).\n"
+            "4. KEINE Fließtextsätze in den Tabellenzellen. Quelle immer in der letzten Spalte als Markdown-Link `[Name](URL)`."
         )
     return sys_prompt, user_prompt, fmt_preset.omit_wrapper_sections
 

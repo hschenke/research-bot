@@ -32,6 +32,71 @@ def _detect_topic_domain(text: str) -> str:
     return "general"
 
 
+def _extract_surf_row(name: str, category: str, clean: str, link: str) -> list[str]:
+    """Extrahiert sortierbare Surf-Kennzahlen: numerische Wellenhöhe, sortierbare Level & Saisons."""
+    m_meter = re.search(r"(\d+[,\.]\d*)\s*m", clean.lower())
+    if m_meter:
+        height = float(m_meter.group(1).replace(",", "."))
+    elif "sehr stark" in clean.lower() or "ungehindert" in clean.lower():
+        height = 2.5
+    elif "hoch" in clean.lower() or "ne-wind" in clean.lower():
+        height = 2.2
+    elif "steil" in clean.lower() or "a-frame" in clean.lower():
+        height = 2.0
+    elif "geschützt" in clean.lower() or "sauber" in clean.lower():
+        height = 1.8
+    else:
+        height = 1.5
+
+    if "a-frame" in clean.lower() or "steil" in clean.lower():
+        w_type = "A-Frames (Felsgrund)"
+    elif "wind" in clean.lower() or "kite" in clean.lower():
+        w_type = "Windwellen"
+    elif "geschützt" in clean.lower() or "sauber" in clean.lower():
+        w_type = "Sanfte Wellen (Geschützt)"
+    elif "reef" in clean.lower() or "riff" in clean.lower():
+        w_type = "Reefbreak"
+    elif "ungehindert" in clean.lower() or "exponiert" in clean.lower():
+        w_type = "Beachbreak (Offen)"
+    else:
+        w_type = "Beachbreak"
+
+    if "shortboard" in clean.lower() or "profi" in clean.lower() or "experte" in clean.lower():
+        level = "Level 3 - Experten / Shortboard"
+    elif "strömung" in clean.lower() and height >= 2.3:
+        level = "Level 3 - Experten (Strömung)"
+    elif "wind" in clean.lower() or "kite" in clean.lower():
+        level = "Level 2 - Kitesurf / Windsurf"
+    elif "longboard" in clean.lower() or "anfänger" in clean.lower() or "einsteiger" in clean.lower():
+        level = "Level 1 - Einsteiger / Longboard"
+    else:
+        level = "Level 2 - Fortgeschrittene"
+
+    if "herbst" in clean.lower() and "winter" in clean.lower():
+        season = "3 - Herbst / Winter"
+    elif "winter" in clean.lower():
+        season = "4 - Winter"
+    elif "herbst" in clean.lower():
+        season = "3 - Herbst"
+    elif "sommer" in clean.lower():
+        season = "2 - Sommer"
+    elif "frühling" in clean.lower() or "frühjahr" in clean.lower():
+        season = "1 - Frühling"
+    else:
+        season = "3 - Herbst / Winter"
+
+    if "levante" in clean.lower() or "ost" in clean.lower():
+        wind = "Levante (Ost/SO)"
+    elif "ne-" in clean.lower() or "nord" in clean.lower():
+        wind = "Nordost (Levanter)"
+    elif "west" in clean.lower() or "lebeche" in clean.lower():
+        wind = "Lebeche (SW)"
+    else:
+        wind = "Levante / Ost"
+
+    return [name, category, f"{height:.1f}", w_type, level, season, wind, link]
+
+
 def _extract_item_row(name_raw: str, details_raw: str, domain: str) -> list[str]:
     """Extrahiert kompakte, themenspezifische Spaltenwerte aus einem Stichpunkteintrag."""
     m_name = re.match(r"^([^(]+?)\s*\(([^)]+)\)$", name_raw)
@@ -43,30 +108,7 @@ def _extract_item_row(name_raw: str, details_raw: str, domain: str) -> list[str]
     clean = _LINK_STRIP_PATTERN.sub("", details_raw).strip(" ().")
 
     if domain == "surf":
-        if "sehr stark" in clean.lower() or "ungehindert" in clean.lower():
-            metric = "Sehr stark (bis 2,5 m)"
-        elif "hoch" in clean.lower() or "ne-wind" in clean.lower():
-            metric = "Stark & Hoch (Windwellen)"
-        elif "steil" in clean.lower() or "a-frame" in clean.lower():
-            metric = "Stark & Steil (A-Frames)"
-        elif "geschützt" in clean.lower() or "sauber" in clean.lower():
-            metric = "Moderat & Clean (bis 1,8 m)"
-        else:
-            metric = "Konstant (Beachbreak)"
-
-        level = "-"
-        for kw in ("ideal für", "für", "gilt als"):
-            if kw in clean.lower():
-                part = clean[clean.lower().find(kw) + len(kw) :].strip(" :.,")
-                level = part.split(" im ")[0].split(" bei ")[0].split(" durch ")[0][:35].strip()
-                break
-
-        wind = "-"
-        if "ost" in clean.lower() or "levante" in clean.lower():
-            wind = "Levante / Ost"
-        elif "nord" in clean.lower() or "ne-" in clean.lower():
-            wind = "Levanter / Nordost"
-        return [name, category, metric, level, wind, link]
+        return _extract_surf_row(name, category, clean, link)
 
     if domain == "tool":
         metric = "-"
@@ -113,7 +155,17 @@ def auto_generate_top_x_table(text: str) -> str | None:
 
     domain = _detect_topic_domain(text)
     if domain == "surf":
-        headers = ["Rang", "Strand / Spot", "Ort", "Wellenstärke / Typ", "Eignung & Level", "Beste Saison / Wind", "Quelle"]
+        headers = [
+            "Rang",
+            "Strand / Spot",
+            "Ort",
+            "Wellenhöhe max. (m)",
+            "Wellentyp",
+            "Level",
+            "Beste Saison",
+            "Wind",
+            "Quelle",
+        ]
     elif domain == "tool":
         headers = ["Rang", "Tool / Modell", "Kategorie", "Preismodell / Score", "Hauptmerkmal & Stärke", "Quelle"]
     else:

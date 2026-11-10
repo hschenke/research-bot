@@ -123,7 +123,7 @@ def render_model_routing_dialog(
         st.info("🔒 Nur Administratoren können die Routing-Strategie speichern.")
         return
 
-    if st.button("💾 Einstellungen jetzt dauerhaft speichern", type="primary", use_container_width=True, key="btn_save_routing"):
+    if st.button("💾 Einstellungen jetzt dauerhaft speichern", type="primary", width="stretch", key="btn_save_routing"):
         _save_routing(
             repository=repository,
             cfg=cfg,

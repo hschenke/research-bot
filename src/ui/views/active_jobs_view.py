@@ -63,7 +63,7 @@ def _render_idle_jobs_view(
     with col_head:
         st.caption("Keine Hintergrund-Jobs aktiv. Auto-Refresh pausiert.")
     with col_btn:
-        if st.button("Jetzt prüfen", key="idle_check_btn", use_container_width=True):
+        if st.button("Jetzt prüfen", key="idle_check_btn", width="stretch"):
             st.rerun()
 
     st.info("Aktuell laufen keine Hintergrund-Recherchen.")
@@ -98,7 +98,7 @@ def _render_live_jobs_fragment(
     with col_head:
         st.caption("🔄 Aktualisiert sich automatisch alle 3 Sekunden (inkl. Live-Aktionsanzeige).")
     with col_btn:
-        if st.button("Jetzt prüfen", key="live_check_btn", use_container_width=True):
+        if st.button("Jetzt prüfen", key="live_check_btn", width="stretch"):
             st.rerun(scope="fragment")
 
     active_jobs = repository.list_jobs(statuses=ACTIVE_JOB_STATUSES, limit=50)
@@ -229,7 +229,7 @@ def _render_finished_job_actions(
     if is_completed:
         col_view, col_del = st.columns([1.2, 1.0])
         with col_view:
-            if st.button("📄 Bericht", key=f"view_rep_{job.id}", use_container_width=True):
+            if st.button("📄 Bericht", key=f"view_rep_{job.id}", width="stretch"):
                 st.query_params["tab"] = "reports"
                 st.query_params["job_id"] = job.id
                 st.session_state["_force_nav_tab"] = "reports"
@@ -239,7 +239,7 @@ def _render_finished_job_actions(
                 "🗑️",
                 key=f"del_done_{job.id}",
                 help="Auftrag & Bericht löschen",
-                use_container_width=True,
+                width="stretch",
             ):
                 repository.delete_job_and_report(job.id)
                 st.rerun()
@@ -248,11 +248,11 @@ def _render_finished_job_actions(
     if role == AuthRole.ADMIN:
         col_res, col_del = st.columns(2)
         with col_res:
-            if st.button("🔁", key=f"retry_{job.id}", help="Auftrag fortsetzen", use_container_width=True):
+            if st.button("🔁", key=f"retry_{job.id}", help="Auftrag fortsetzen", width="stretch"):
                 _resume_interrupted_job(job, settings, repository)
                 _stay_on_jobs_tab_and_rerun()
         with col_del:
-            if st.button("🗑️", key=f"del_fin_{job.id}", help="Auftrag löschen", use_container_width=True):
+            if st.button("🗑️", key=f"del_fin_{job.id}", help="Auftrag löschen", width="stretch"):
                 repository.delete_job_and_report(job.id)
                 st.rerun()
 
@@ -307,7 +307,7 @@ def _render_active_admin_actions(
         if st.button(
             "⏹️ Stopp",
             key=f"cancel_{job.id}",
-            use_container_width=True,
+            width="stretch",
             help="Prozess sofort beenden",
         ):
             repository.request_cancellation(job.id)
@@ -317,7 +317,7 @@ def _render_active_admin_actions(
         if st.button(
             "🗑️ Löschen",
             key=f"del_active_{job.id}",
-            use_container_width=True,
+            width="stretch",
             help="Prozess beenden & Auftrag direkt löschen",
         ):
             repository.request_cancellation(job.id)

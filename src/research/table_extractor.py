@@ -48,19 +48,18 @@ def _extract_surf_row(name: str, category: str, clean: str) -> list[str]:
     else:
         height = 1.5
 
-    # Fachbegriffe mit Fragezeichen versehen für interaktive Tooltips / Glossar
     if "a-frame" in clean.lower() or "steil" in clean.lower():
-        w_type = "A-Frames ❓ (Felsgrund)"
+        w_type = "A-Frames (Felsgrund)"
     elif "wind" in clean.lower() or "kite" in clean.lower():
-        w_type = "Windwellen ❓"
+        w_type = "Windwellen"
     elif "geschützt" in clean.lower() or "sauber" in clean.lower():
         w_type = "Sanfte Wellen (Geschützt)"
     elif "reef" in clean.lower() or "riff" in clean.lower():
-        w_type = "Reefbreak ❓"
+        w_type = "Reefbreak"
     elif "ungehindert" in clean.lower() or "exponiert" in clean.lower():
-        w_type = "Beachbreak ❓ (Offen)"
+        w_type = "Beachbreak (Offen)"
     else:
-        w_type = "Beachbreak ❓"
+        w_type = "Beachbreak"
 
     if "shortboard" in clean.lower() or "profi" in clean.lower() or "experte" in clean.lower():
         level = "Level 3 - Experten / Shortboard"

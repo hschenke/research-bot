@@ -114,7 +114,7 @@ def _render_single_report(
             data=report.content_markdown.encode("utf-8"),
             file_name=f"research_{report.job_id}.md",
             mime="text/markdown",
-            use_container_width=True,
+            width="stretch",
         )
     with dl_col2:
         st.download_button(
@@ -122,43 +122,24 @@ def _render_single_report(
             data=html_export.encode("utf-8"),
             file_name=f"research_{report.job_id}.html",
             mime="text/html",
-            use_container_width=True,
+            width="stretch",
         )
     with mail_col:
         can_send_mail = role == AuthRole.ADMIN and settings.has_email_configured
         if can_send_mail and st.button(
             "📧 Per E-Mail senden",
             key=f"send_mail_{report.job_id}",
-            use_container_width=True,
+            width="stretch",
         ):
             _resend_report_email(report=report, settings=settings, repository=repository)
     with del_col:
         if role == AuthRole.ADMIN and st.button(
             "🗑️ Löschen",
             key=f"del_rep_{report.job_id}",
-            use_container_width=True,
+            width="stretch",
         ):
             repository.delete_job_and_report(report.job_id)
             st.rerun()
-
-    job_record = repository.get_job(report.job_id)
-    checkpoint = repository.load_checkpoint(report.job_id)
-    with st.expander("📋 Recherche-Auftrag, Anforderungen & Teilthemen einsehen", expanded=False):
-        st.markdown(f"**Recherche-Thema:** {report.topic}")
-        if job_record and job_record.focus_instructions.strip():
-            st.markdown(f"**Eingegebene Anforderungen / Schwerpunkte:**\n> {job_record.focus_instructions.strip()}")
-        else:
-            st.caption("Keine zusätzlichen Einschränkungen oder Vorgaben eingegeben.")
-        if checkpoint and checkpoint.plan and checkpoint.plan.subtopics:
-            st.markdown("**Untersuchte Teilthemen & Leitfragen:**")
-            for sub in checkpoint.plan.subtopics:
-                st.markdown(f"{sub.index}. **{sub.title}** – _{sub.guiding_question}_")
-
-    if report.citations:
-        with st.expander(f"🔗 Alle {len(report.citations)} ausgewerteten Web-Quellen anzeigen"):
-            for idx, cite in enumerate(report.citations, start=1):
-                label = cite.title or cite.url
-                st.markdown(f"{idx}. [{label}]({cite.url})")
 
     with st.container(border=True):
         render_markdown_with_interactive_tables(report.content_markdown)

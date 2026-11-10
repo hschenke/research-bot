@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 from src.config.constants import ADMIN_TOKEN_MAX_AGE_SECONDS, AUTH_COOKIE_NAME
 from src.config.settings import AppSettings
@@ -21,6 +20,16 @@ def _get_rate_limiter() -> LoginRateLimiter:
     return LoginRateLimiter()
 
 
+def _run_script_iframe(js_code: str) -> None:
+    """Führt JavaScript im Browser-Iframe aus (bevorzugt modernes st.iframe)."""
+    if hasattr(st, "iframe"):
+        st.iframe(js_code, height=1)
+    else:
+        import streamlit.components.v1 as components
+
+        components.html(js_code, height=0, width=0)
+
+
 def _inject_auth_cookie_js(token: str) -> None:
     """Schreibt das Auth-Token als Cookie (30 Tage) und in LocalStorage für dauerhafte Anmeldung."""
     js = f"""
@@ -34,7 +43,7 @@ def _inject_auth_cookie_js(token: str) -> None:
     }})();
     </script>
     """
-    components.html(js, height=0, width=0)
+    _run_script_iframe(js)
 
 
 def _inject_clear_cookie_js() -> None:
@@ -49,7 +58,7 @@ def _inject_clear_cookie_js() -> None:
     }})();
     </script>
     """
-    components.html(js, height=0, width=0)
+    _run_script_iframe(js)
 
 
 def _inject_cookie_restore_js() -> None:
@@ -69,7 +78,7 @@ def _inject_cookie_restore_js() -> None:
     }})();
     </script>
     """
-    components.html(js, height=0, width=0)
+    _run_script_iframe(js)
 
 
 def determine_session_role(settings: AppSettings) -> AuthRole:
@@ -119,7 +128,7 @@ def render_login_gate_or_sidebar(settings: AppSettings, current_role: AuthRole) 
             _inject_auth_cookie_js(token_to_persist)
 
         st.sidebar.success("🔐 Angemeldet als **Administrator** (Cookie aktiv)")
-        if st.sidebar.button("Abmelden", use_container_width=True):
+        if st.sidebar.button("Abmelden", width="stretch"):
             _perform_logout()
             st.rerun()
         return True
@@ -149,7 +158,7 @@ def _render_password_form(settings: AppSettings, form_key: str) -> None:
 
     with st.form(form_key):
         password_input = st.text_input("App-Passwort", type="password")
-        submitted = st.form_submit_button("Anmelden (30 Tage merken)", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Anmelden (30 Tage merken)", type="primary", width="stretch")
 
     if not submitted:
         return

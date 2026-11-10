@@ -32,7 +32,7 @@ def render_new_research_view(
         with col_alert:
             st.success("Auftrag gestartet! Der Job läuft nun im Hintergrund.")
         with col_btn:
-            if st.button("👉 Zum laufenden Job", type="primary", use_container_width=True, key="btn_jump_to_jobs"):
+            if st.button("👉 Zum laufenden Job", type="primary", width="stretch", key="btn_jump_to_jobs"):
                 st.session_state.pop("_new_job_started", None)
                 st.session_state["_force_nav_tab"] = "jobs"
                 st.rerun()
@@ -80,7 +80,7 @@ def render_new_research_view(
             f"⚡ **KI-Routing:** `{routing.research_primary_model}` · {google_flag} · {tools_str} · **{routing.max_rpm} RPM**"
         )
     with col_btn:
-        if st.button("🎛️ Routing & Tools", use_container_width=True, help="Modelle, alternative Such-Tools und RPM-Limits anpassen"):
+        if st.button("🎛️ Routing & Tools", width="stretch", help="Modelle, alternative Such-Tools und RPM-Limits anpassen"):
             render_model_routing_dialog(repository, cfg, role)
 
     with st.form("create_research_job_form", clear_on_submit=False):
@@ -127,7 +127,7 @@ def render_new_research_view(
         submitted = st.form_submit_button(
             "🚀 Recherche im Hintergrund starten",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not settings.has_gemini_configured,
         )
 

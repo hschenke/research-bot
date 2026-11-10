@@ -1,4 +1,4 @@
-"""Interaktive Tabellen-Aufbereitung & Sortierung für Recherche-Berichte in Streamlit."""
+"""Interaktive Tabellen-Aufbereitung für Recherche-Berichte in Streamlit."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from src.research.table_extractor import auto_generate_top_x_table
-from src.ui.table_glossary import GLOSSARY_HELP_TEXT, render_surf_glossary_popover
+from src.ui.table_glossary import GLOSSARY_HELP_TEXT
 from src.ui.table_parser import (
     clean_cell_content as _clean_cell_content,
 )
@@ -33,7 +33,7 @@ _SECONDARY_COLUMNS = ("wind", "details", "beschreibung", "kommentar")
 
 
 def _build_column_configs(df: pd.DataFrame, url_columns: set[str]) -> dict[str, Any]:
-    """Konfiguriert kompakte Spaltenbreiten, Einheiten und Tooltips für die Tabelle."""
+    """Konfiguriert Spaltenbreiten, Einheiten und das eingekreiste Fragezeichen (?) mit Tooltip."""
     column_configs: dict[str, Any] = {}
     for col in df.columns:
         if col in url_columns:
@@ -51,7 +51,9 @@ def _build_column_configs(df: pd.DataFrame, url_columns: set[str]) -> dict[str, 
             column_configs[col] = st.column_config.NumberColumn(col, width=width, format="%d")
         elif pd.api.types.is_float_dtype(df[col]):
             if "(m)" in col_lower or "meter" in col_lower or "höhe" in col_lower:
-                column_configs[col] = st.column_config.NumberColumn(col, width="small", format="%.1f m")
+                column_configs[col] = st.column_config.NumberColumn(
+                    col, width="small", format="%.1f m", help="Maximale Wellenhöhe in Metern"
+                )
             elif "€" in col or "eur" in col_lower or "preis" in col_lower:
                 column_configs[col] = st.column_config.NumberColumn(col, width="small", format="%.2f €")
             elif "%" in col:
@@ -60,6 +62,7 @@ def _build_column_configs(df: pd.DataFrame, url_columns: set[str]) -> dict[str, 
                 column_configs[col] = st.column_config.NumberColumn(col, width="small", format="%.2f")
         else:
             if any(k in col_lower for k in ("typ", "art", "wellentyp")):
+                # Zeigt das kleine eingekreiste (?) an, das bei Mouse-Hover und Mobile-Touch den Tooltip öffnet
                 column_configs[col] = st.column_config.TextColumn(
                     col,
                     width="medium",
@@ -83,68 +86,23 @@ def parse_markdown_table(lines: list[str]) -> tuple[pd.DataFrame, dict[str, Any]
     return df, column_configs
 
 
-def _render_sorting_and_actions_bar(df: pd.DataFrame, table_idx: int) -> pd.DataFrame:
-    """Rendert Sortier-Leiste und Fachbegriffe-Hilfe in einer kompakten Zeile."""
-    sortable_cols = [c for c in df.columns if c.lower() not in _EXCLUDED_COLUMNS]
-    if not sortable_cols:
-        return df
-
-    default_idx = 0
-    for idx, c in enumerate(sortable_cols):
-        if any(kw in c.lower() for kw in ("höhe", "score", "metrik", "wert", "preis")):
-            default_idx = idx
-            break
-
-    c_select, c_order, c_help = st.columns([2.5, 2.0, 1.8])
-    with c_select:
-        selected_col = st.selectbox(
-            "↕️ Sortieren nach:",
-            options=sortable_cols,
-            index=default_idx,
-            key=f"tbl_sort_{table_idx}",
-            help="Wähle eine Kennzahl zum Sortieren.",
-        )
-
-    is_metric_descending = any(kw in selected_col.lower() for kw in ("höhe", "score", "wert", "meter", "stark"))
-    with c_order:
-        sort_order = st.radio(
-            "Reihenfolge:",
-            options=["Absteigend ⬇️", "Aufsteigend ⬆️"],
-            index=0 if is_metric_descending else 1,
-            horizontal=True,
-            key=f"tbl_order_{table_idx}",
-        )
-
-    with c_help:
-        render_surf_glossary_popover()
-
-    ascending = sort_order == "Aufsteigend ⬆️"
-    try:
-        return df.sort_values(by=selected_col, ascending=ascending)
-    except Exception:
-        return df
-
-
-def _apply_compact_column_filter(df: pd.DataFrame, table_idx: int) -> pd.DataFrame:
-    """Reduziert standardmäßig auf Kernspalten, um horizontales Scrollen zu vermeiden."""
+def _filter_compact_columns(df: pd.DataFrame, table_idx: int = 1) -> pd.DataFrame:
+    """Entfernt Quellenspalten und sekundäre Spalten für eine kompakte, scrollfreie Ansicht."""
+    _ = table_idx
+    # 1. Quelle / Link / URL strikt aus der Tabelle entfernen
     clean_cols = [c for c in df.columns if c.lower() not in _EXCLUDED_COLUMNS]
     if clean_cols:
         df = df[clean_cols]
 
+    # 2. Sekundäre Spalten (z. B. Wind) weglassen, wenn Tabelle sonst horizontal scrollen würde
     core_cols = [c for c in df.columns if c.lower() not in _SECONDARY_COLUMNS]
     if len(df.columns) > 6 and len(core_cols) >= 4:
-        with st.expander("⚙️ Spalten anpassen (Details einblenden)", expanded=False):
-            selected = st.multiselect(
-                "Angezeigte Spalten:",
-                options=list(df.columns),
-                default=core_cols,
-                key=f"tbl_cols_{table_idx}",
-            )
-        if selected:
-            return df[selected]
         return df[core_cols]
 
     return df
+
+
+_apply_compact_column_filter = _filter_compact_columns
 
 
 def render_markdown_with_interactive_tables(content_markdown: str) -> None:
@@ -166,13 +124,11 @@ def render_markdown_with_interactive_tables(content_markdown: str) -> None:
             st.markdown(content_markdown)
             return
 
-    table_counter = 0
     for block_type, content in blocks:
         if block_type == "text":
             if str(content).strip():
                 st.markdown(content)
         elif block_type == "table":
-            table_counter += 1
             table_lines = content
             result = parse_markdown_table_raw(table_lines)
             if result is None:
@@ -180,19 +136,17 @@ def render_markdown_with_interactive_tables(content_markdown: str) -> None:
                 continue
 
             df, url_columns = result
-            df = _apply_compact_column_filter(df, table_counter)
+            df = _filter_compact_columns(df)
             col_configs = _build_column_configs(df, url_columns)
-            sorted_df = _render_sorting_and_actions_bar(df, table_counter)
 
             st.dataframe(
-                sorted_df,
-                use_container_width=True,
+                df,
+                width="stretch",
                 hide_index=True,
                 column_config=col_configs,
             )
             st.caption(
-                "💡 *Gezielte Sortierung & Fachbegriffe-Erklärung über die Leiste oben · "
-                "Spaltenköpfe anklickbar · Vollbild & Suche oben rechts.*"
+                "💡 *Spaltenköpfe zum Sortieren anklicken · Eingekreistes (?) bei Wellentyp für Begriffserklärungen (Hover/Touch).*"
             )
             raw_table_md = "\n".join(table_lines)
             with st.expander("📋 Reine Markdown-Tabelle anzeigen", expanded=False):

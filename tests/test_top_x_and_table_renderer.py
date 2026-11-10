@@ -194,7 +194,7 @@ def test_auto_generate_top_x_table_from_bullets() -> None:
     assert table is not None
     assert "| Rang | Strand / Spot | Ort | Wellenhöhe max. (m) | Wellentyp | Level | Beste Saison |" in table
     assert "| 1 | Playa de San Juan | Alicante | 2.0 |" in table
-    assert "Beachbreak ❓" in table
+    assert "Beachbreak" in table
     assert "| 2 | Playa de Guardamar | - | 2.5 |" in table
     assert "Level 3 - Experten" in table
     assert "Quelle" not in table
@@ -207,7 +207,7 @@ def test_compact_column_filter_strips_sources() -> None:
         "Spot": ["Playa San Juan"],
         "Ort": ["Alicante"],
         "Welle": [2.0],
-        "Typ": ["Beachbreak ❓"],
+        "Typ": ["Beachbreak"],
         "Level": ["Level 2"],
         "Saison": ["Herbst"],
         "Wind": ["Levante"],

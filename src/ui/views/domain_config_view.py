@@ -51,7 +51,7 @@ def render_domain_config_view(
         if is_admin and has_custom and st.button(
             "🔄 Auf Standard zurücksetzen",
             key="btn_reset_domain_cfg",
-            use_container_width=True,
+            width="stretch",
         ):
             repository.reset_domain_config()
             clear_domain_editor_state()
@@ -166,7 +166,7 @@ def _render_style_and_formats_tab(
         submitted = st.form_submit_button(
             "💾 Stilregeln & Berichtsformate speichern",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not is_admin,
         )
 

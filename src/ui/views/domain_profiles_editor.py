@@ -30,7 +30,7 @@ def render_depth_profiles_tab(
         saved = st.form_submit_button(
             "💾 Recherche-Tiefen speichern",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not is_admin,
         )
 
@@ -155,7 +155,7 @@ def render_app_and_limits_tab(
         saved = st.form_submit_button(
             "💾 App-Einstellungen & Limits speichern",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not is_admin,
         )
 

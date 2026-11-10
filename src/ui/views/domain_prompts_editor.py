@@ -124,7 +124,7 @@ def render_prompts_tab(
         saved = st.form_submit_button(
             "💾 KI-Prompts & Vorlagen speichern",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not is_admin,
         )
 
@@ -215,7 +215,7 @@ def render_yaml_tab(
         submitted = st.form_submit_button(
             "💾 YAML validieren & speichern",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=not is_admin,
         )
 

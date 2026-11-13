@@ -451,5 +451,15 @@ def test_completed_job_report_button_switches_to_reports_tab(tmp_path: Path) -> 
         assert at.query_params.get("tab") == "reports"
         assert at.query_params.get("job_id") == str(job.id)
 
+        # Linke Sidebar-Navigation enthält alle 5 Tabs und wechselt zuverlässig den aktiven Tab
+        for nav_key in ("new", "jobs", "reports", "rules", "settings"):
+            assert at.button(key=f"sidebar_nav_{nav_key}") is not None
+
+        at.button(key="sidebar_nav_settings").click().run()
+        assert not at.exception
+        assert at.session_state["main_navigation_tab"] == "⚙️ System"
+        assert at.query_params.get("tab") == "settings"
+
     repo.close()
+
 

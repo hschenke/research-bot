@@ -1,12 +1,13 @@
-"""Statisches CSS-Designsystem für eine moderne, schnelle und aufgeräumte UI."""
+"""Statisches CSS-Designsystem für eine moderne, schnelle und aufgeräumte Desktop- & Mobile-UI."""
 
 import streamlit as st
 
 _STATIC_APP_CSS = """
 <style>
+  /* Ausreichend Abstand unter der fixierten Streamlit-Top-Bar (verhindert Abschneiden auf Mobile & Desktop) */
   .block-container {
-      padding-top: 1.1rem;
-      padding-bottom: 2.5rem;
+      padding-top: 3.75rem !important;
+      padding-bottom: 2.5rem !important;
       max-width: 1080px;
   }
   footer, div[data-testid="stDecoration"] {
@@ -32,17 +33,18 @@ _STATIC_APP_CSS = """
       align-items: center;
       justify-content: space-between;
       gap: 0.75rem;
+      margin-top: 0.15rem;
       margin-bottom: 0.45rem;
-      padding-bottom: 0.2rem;
+      padding-bottom: 0.15rem;
   }
   .rb-brand {
       display: inline-flex;
       align-items: center;
-      gap: 0.5rem;
-      font-size: 1.45rem;
+      gap: 0.45rem;
+      font-size: 1.38rem;
       font-weight: 700;
-      letter-spacing: -0.025em;
-      line-height: 1.2;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
   }
   .rb-badge {
       display: inline-flex;
@@ -52,10 +54,11 @@ _STATIC_APP_CSS = """
       font-weight: 600;
       padding: 0.18rem 0.55rem;
       border-radius: 999px;
-      background: rgba(37, 99, 235, 0.09);
+      background: rgba(37, 99, 235, 0.1);
       color: #2563eb;
-      border: 1px solid rgba(37, 99, 235, 0.2);
+      border: 1px solid rgba(37, 99, 235, 0.22);
       font-variant-numeric: tabular-nums;
+      white-space: nowrap;
   }
 
   /* Pill-Statusleiste (Routing & Report-Meta) */
@@ -63,16 +66,16 @@ _STATIC_APP_CSS = """
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 0.4rem;
-      margin: 0.15rem 0 0.45rem 0;
+      gap: 0.35rem;
+      margin: 0.15rem 0 0.35rem 0;
   }
   .rb-pill {
       display: inline-flex;
       align-items: center;
-      gap: 0.28rem;
-      font-size: 0.78rem;
+      gap: 0.25rem;
+      font-size: 0.76rem;
       font-weight: 500;
-      padding: 0.2rem 0.58rem;
+      padding: 0.18rem 0.52rem;
       border-radius: 6px;
       background: rgba(128, 128, 128, 0.08);
       border: 1px solid rgba(128, 128, 128, 0.16);
@@ -81,14 +84,14 @@ _STATIC_APP_CSS = """
 
   /* Moderne Tab-Navigation */
   div[data-baseweb="tab-list"] {
-      gap: 0.25rem;
+      gap: 0.2rem;
       border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-      margin-bottom: 0.75rem;
+      margin-bottom: 0.65rem;
   }
   button[data-baseweb="tab"] {
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       font-weight: 500;
-      padding: 0.45rem 0.85rem 0.55rem 0.85rem;
+      padding: 0.4rem 0.75rem 0.5rem 0.75rem;
       border-radius: 0.4rem 0.4rem 0 0;
       transition: background-color 0.12s ease, color 0.12s ease;
   }
@@ -97,6 +100,63 @@ _STATIC_APP_CSS = """
   }
   button[data-baseweb="tab"][aria-selected="true"] {
       font-weight: 600;
+  }
+
+  /* Linke Sidebar-Navigation kompakt & linksbündig */
+  section[data-testid="stSidebar"] [data-testid="stButton"] button {
+      justify-content: flex-start !important;
+      text-align: left !important;
+      padding: 0.4rem 0.75rem !important;
+      min-height: 2.25rem !important;
+      font-size: 0.88rem !important;
+  }
+  section[data-testid="stSidebar"] [data-testid="stButton"] button > div {
+      justify-content: flex-start !important;
+      text-align: left !important;
+  }
+
+  /* Kompakte Aktions-Buttons (.md, .html, E-Mail, Delete, Stop, Report) immer klein & nebeneinander */
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]),
+  div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] {
+      display: flex !important;
+      flex-direction: row !important;
+      flex-wrap: wrap !important;
+      gap: 0.4rem !important;
+      align-items: center !important;
+      justify-content: flex-start !important;
+      margin: 0.15rem 0 0.45rem 0 !important;
+  }
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) > div[data-testid="stColumn"],
+  div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+      width: auto !important;
+      min-width: 0 !important;
+      flex: 0 0 auto !important;
+  }
+  div[data-testid="stHorizontalBlock"]:has([data-testid="stDownloadButton"]) button,
+  div[data-testid="stColumn"] div[data-testid="stHorizontalBlock"] button {
+      padding: 0.22rem 0.62rem !important;
+      min-height: 1.95rem !important;
+      font-size: 0.8rem !important;
+      line-height: 1.2 !important;
+      width: auto !important;
+      white-space: nowrap !important;
+  }
+
+  /* Proportionale Überschriften in Reports (kein riesiger 4-Zeilen-Titel auf Mobile) */
+  .block-container h1 {
+      font-size: 1.42rem !important;
+      line-height: 1.28 !important;
+      margin-top: 0.1rem !important;
+      padding-top: 0 !important;
+  }
+  .block-container h2 {
+      font-size: 1.15rem !important;
+      line-height: 1.3 !important;
+      margin-top: 0.85rem !important;
+  }
+  .block-container h3 {
+      font-size: 1.02rem !important;
+      line-height: 1.3 !important;
   }
 
   /* Karten, Formulare & Buttons */
@@ -113,19 +173,31 @@ _STATIC_APP_CSS = """
       font-weight: 500;
       transition: transform 0.1s ease, box-shadow 0.12s ease, border-color 0.12s ease;
   }
-  div.stButton > button:hover,
-  div.stDownloadButton > button:hover,
-  div.stFormSubmitButton > button:hover {
-      transform: translateY(-0.5px);
-  }
 
   @media (max-width: 640px) {
       .block-container {
-          padding-top: 0.75rem;
-          padding-left: 0.75rem;
-          padding-right: 0.75rem;
+          padding-top: 3.5rem !important;
+          padding-left: 0.75rem !important;
+          padding-right: 0.75rem !important;
       }
-      .rb-brand { font-size: 1.25rem; }
+      .rb-brand { font-size: 1.2rem; }
+      .rb-pill {
+          font-size: 0.71rem;
+          padding: 0.14rem 0.42rem;
+      }
+      div[data-baseweb="tab-list"] {
+          gap: 0.08rem;
+      }
+      button[data-baseweb="tab"] {
+          font-size: 0.76rem;
+          padding: 0.32rem 0.42rem 0.42rem 0.42rem;
+      }
+      .block-container h1 {
+          font-size: 1.22rem !important;
+      }
+      .block-container h2 {
+          font-size: 1.06rem !important;
+      }
   }
 
   /* Interaktive Tabellen & Tooltips */
@@ -250,4 +322,5 @@ _STATIC_APP_CSS = """
 def inject_static_styles() -> None:
     """Injiziert ausschließlich konstantes Layout-CSS ohne jegliche Benutzereingaben."""
     st.markdown(_STATIC_APP_CSS, unsafe_allow_html=True)
+
 

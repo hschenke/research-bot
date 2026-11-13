@@ -75,13 +75,44 @@ def _sync_navigation_tab_state() -> str:
     return str(current)
 
 
+def _on_sidebar_nav_click(nav_key: str) -> None:
+    """Callback für den direkten Tab-Wechsel über die linke Seitenleiste."""
+    if nav_key in NAV_KEY_TO_TITLE:
+        target_title = NAV_KEY_TO_TITLE[nav_key]
+        st.session_state[MAIN_NAV_TAB_KEY] = target_title
+        st.query_params["tab"] = nav_key
+        st.session_state["_last_seen_qp_tab"] = nav_key
+
+
+def _render_sidebar_navigation(
+    active_tab_title: str,
+    settings: AppSettings,
+    repository: ResearchRepository,
+) -> None:
+    """Rendert die linke Seitenleiste mit Name, Version, Tab-Navigation und Systeminfo."""
+    st.sidebar.markdown(f"### 🔬 Research-Bot `v{__version__}`")
+    st.sidebar.caption("Navigation")
+    for nav_key, nav_title in NAV_KEY_TO_TITLE.items():
+        is_active = nav_title == active_tab_title
+        st.sidebar.button(
+            nav_title,
+            key=f"sidebar_nav_{nav_key}",
+            type="primary" if is_active else "secondary",
+            width="stretch",
+            on_click=_on_sidebar_nav_click,
+            args=(nav_key,),
+        )
+    st.sidebar.divider()
+    st.sidebar.caption(f"🗄️ `{repository.backend_name}`")
+
+
 def run_streamlit_app() -> None:
     """Initialisiert Seitenlayout, Authentifizierung, Fachlogik-Laden und Tab-Navigation."""
     st.set_page_config(
         page_title="Research-Bot",
         page_icon="🔬",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="auto",
     )
     inject_static_styles()
 
@@ -89,6 +120,9 @@ def run_streamlit_app() -> None:
     repository = _get_cached_repository(settings.turso_url, settings.sqlite_path)
     repository.cleanup_stuck_cancellations()
     domain_config = repository.get_domain_config()
+
+    default_tab_title = _sync_navigation_tab_state()
+    _render_sidebar_navigation(default_tab_title, settings, repository)
 
     role = determine_session_role(settings)
     if not render_login_gate_or_sidebar(settings, role):
@@ -102,7 +136,6 @@ def run_streamlit_app() -> None:
         unsafe_allow_html=True,
     )
 
-    default_tab_title = _sync_navigation_tab_state()
     tab_new, tab_jobs, tab_reports, tab_rules, tab_settings = st.tabs(
         list(NAV_TAB_TITLES),
         default=default_tab_title,
@@ -144,3 +177,4 @@ def run_streamlit_app() -> None:
             role=role,
             domain_config=domain_config,
         )
+

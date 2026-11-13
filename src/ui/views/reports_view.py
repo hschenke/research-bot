@@ -35,7 +35,8 @@ def render_reports_view(
     with col_search:
         search_query = st.text_input(
             "🔍 Filter",
-            placeholder="Stichwort oder Thema...",
+            placeholder="🔍 Stichwort oder Thema filtern...",
+            label_visibility="collapsed",
         )
 
     reports = repository.list_reports(search_query=search_query, limit=50)
@@ -103,49 +104,44 @@ def _render_single_report(
         report=report, app_report_url=app_url, domain_config=cfg
     )
 
-    meta_col, dl_col1, dl_col2, mail_col, del_col = st.columns(
-        [2.2, 0.85, 0.85, 0.9, 0.55], vertical_alignment="center"
-    )
-    with meta_col:
-        _render_metadata_badge_bar(report, cfg)
-    with dl_col1:
+    _render_metadata_badge_bar(report, cfg)
+
+    can_send_mail = role == AuthRole.ADMIN and settings.has_email_configured
+    is_admin = role == AuthRole.ADMIN
+    btn_count = 2 + (1 if can_send_mail else 0) + (1 if is_admin else 0)
+    btn_cols = st.columns(btn_count, gap="small")
+
+    with btn_cols[0]:
         st.download_button(
             "⬇️ .md",
             data=report.content_markdown.encode("utf-8"),
             file_name=f"research_{report.job_id}.md",
             mime="text/markdown",
-            width="stretch",
             help="Markdown herunterladen",
         )
-    with dl_col2:
+    with btn_cols[1]:
         st.download_button(
             "⬇️ .html",
             data=html_export.encode("utf-8"),
             file_name=f"research_{report.job_id}.html",
             mime="text/html",
-            width="stretch",
             help="HTML-Report herunterladen",
         )
-    with mail_col:
-        can_send_mail = role == AuthRole.ADMIN and settings.has_email_configured
-        if can_send_mail and st.button(
-            "📧 E-Mail",
-            key=f"send_mail_{report.job_id}",
-            width="stretch",
-        ):
-            _resend_report_email(report=report, settings=settings, repository=repository)
-    with del_col:
-        if role == AuthRole.ADMIN and st.button(
-            "🗑️",
-            key=f"del_rep_{report.job_id}",
-            width="stretch",
-            help="Report löschen",
-        ):
-            repository.delete_job_and_report(report.job_id)
-            st.rerun()
+    col_idx = 2
+    if can_send_mail:
+        with btn_cols[col_idx]:
+            if st.button("📧 E-Mail", key=f"send_mail_{report.job_id}"):
+                _resend_report_email(report=report, settings=settings, repository=repository)
+        col_idx += 1
+    if is_admin:
+        with btn_cols[col_idx]:
+            if st.button("🗑️", key=f"del_rep_{report.job_id}", help="Report löschen"):
+                repository.delete_job_and_report(report.job_id)
+                st.rerun()
 
     with st.container(border=True):
         render_markdown_with_interactive_tables(report.content_markdown, job_id=report.job_id)
+
 
 
 def _resend_report_email(

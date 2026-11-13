@@ -222,19 +222,19 @@ def test_stop_and_resume_buttons_stay_on_active_jobs_tab(tmp_path: Path) -> None
 
         at = AppTest.from_function(_entry).run()
 
-        # Klick auf "⏹️ Stopp" (Auftrag wird abgebrochen)
+        # Klick auf "⏹️ Stop" (Auftrag wird abgebrochen)
         at.button(key=f"cancel_{job.id}").click().run()
         cancelled_job = repo.get_job(job.id)
         assert cancelled_job is not None
         assert cancelled_job.status == JobStatus.CANCELLED
-        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
+        assert at.session_state["main_navigation_tab"] == "⏳ Jobs"
 
         # Klick auf "🔁 Fortsetzen" (Auftrag wird erneut eingereiht)
         at.button(key=f"retry_{job.id}").click().run()
         resumed_job = repo.get_job(job.id)
         assert resumed_job is not None
         assert resumed_job.status == JobStatus.QUEUED
-        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
+        assert at.session_state["main_navigation_tab"] == "⏳ Jobs"
 
     repo.close()
 
@@ -345,12 +345,12 @@ def test_job_submission_switches_to_active_jobs_tab_and_shows_flash(tmp_path: Pa
         topic_input = [inp for inp in at.text_input if "Recherche-Thema" in inp.label][0]
         topic_input.set_value("Test Thema für Job-Navigation")
 
-        submit_btn = [btn for btn in at.button if "Recherche im Hintergrund starten" in btn.label][0]
+        submit_btn = [btn for btn in at.button if "Recherche starten" in btn.label][0]
         submit_btn.click().run()
         assert not at.exception
 
-        # App muss sofort zum Tab '⏳ Laufende Jobs' gewechselt sein
-        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
+        # App muss sofort zum Tab '⏳ Jobs' gewechselt sein
+        assert at.session_state["main_navigation_tab"] == "⏳ Jobs"
         assert at.query_params.get("tab") == "jobs"
 
         # Flash-Meldung muss im Jobs-Tab sichtbar sein
@@ -390,12 +390,12 @@ def test_jump_to_jobs_fallback_button_has_no_broken_markdown_link(tmp_path: Path
             assert "[👉 Zum laufenden Job]" not in s.value
             assert "?tab=jobs" not in s.value
 
-        # Klick auf den Button '👉 Zum laufenden Job' wechselt zuverlässig den Tab
+        # Klick auf den Button wechselt zuverlässig den Tab
         jump_btn = at.button(key="btn_jump_to_jobs")
         assert jump_btn is not None
         jump_btn.click().run()
         assert not at.exception
-        assert at.session_state["main_navigation_tab"] == "⏳ Laufende Jobs"
+        assert at.session_state["main_navigation_tab"] == "⏳ Jobs"
 
     repo.close()
 
@@ -440,14 +440,14 @@ def test_completed_job_report_button_switches_to_reports_tab(tmp_path: Path) -> 
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        # Klick auf "📄 Bericht" beim fertigen Job in der Liste
+        # Klick auf "📄 Report" beim fertigen Job in der Liste
         rep_btn = at.button(key=f"view_rep_{job.id}")
         assert rep_btn is not None
         rep_btn.click().run()
         assert not at.exception
 
-        # Tab muss zu '📚 Ergebnisse & Archiv' gewechselt sein und job_id in den Query-Params gesetzt sein
-        assert at.session_state["main_navigation_tab"] == "📚 Ergebnisse & Archiv"
+        # Tab muss zu '📚 Reports' gewechselt sein und job_id in den Query-Params gesetzt sein
+        assert at.session_state["main_navigation_tab"] == "📚 Reports"
         assert at.query_params.get("tab") == "reports"
         assert at.query_params.get("job_id") == str(job.id)
 

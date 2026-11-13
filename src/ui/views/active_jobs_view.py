@@ -1,4 +1,4 @@
-"""Tab 2: Live-Monitoring laufender Jobs inkl. Live-Aktionsanzeige, Sofort-Stopp & Direkt-Löschung."""
+"""Tab 2: Live-Monitoring laufender Jobs inkl. Live-Status, Stop & History."""
 
 from __future__ import annotations
 
@@ -22,11 +22,11 @@ ACTIVE_JOB_STATUSES: tuple[JobStatus, ...] = (JobStatus.RUNNING, JobStatus.QUEUE
 RECENT_FINISHED_LIMIT: int = 10
 
 _STATUS_BADGES: dict[JobStatus, str] = {
-    JobStatus.QUEUED: "🕒 Warteschlange",
-    JobStatus.RUNNING: "⚙️ Läuft im Hintergrund",
-    JobStatus.COMPLETED: "✅ Abgeschlossen",
-    JobStatus.FAILED: "❌ Fehlgeschlagen",
-    JobStatus.CANCELLED: "⏹️ Abgebrochen",
+    JobStatus.QUEUED: "🕒 Queued",
+    JobStatus.RUNNING: "⚡ Running",
+    JobStatus.COMPLETED: "✅ Done",
+    JobStatus.FAILED: "❌ Failed",
+    JobStatus.CANCELLED: "⏹️ Cancelled",
 }
 
 
@@ -55,18 +55,16 @@ def _render_idle_jobs_view(
     role: AuthRole,
     cfg: DomainConfig,
 ) -> None:
-    """Rendert die Ruheansicht ohne periodische Polling-WebSockets (verhindert 2s-Flackern)."""
+    """Rendert die Ruheansicht ohne periodische Polling-WebSockets."""
     dispatcher = JobDispatcher(settings)
     dispatcher.auto_recover_stale_jobs(repository)
 
     col_head, col_btn = st.columns([4, 1], vertical_alignment="center")
     with col_head:
-        st.caption("Keine Hintergrund-Jobs aktiv. Auto-Refresh pausiert.")
+        st.caption("⏸️ Keine aktiven Jobs · Auto-Refresh pausiert")
     with col_btn:
-        if st.button("Jetzt prüfen", key="idle_check_btn", width="stretch"):
+        if st.button("🔄 Refresh", key="idle_check_btn", width="stretch"):
             st.rerun()
-
-    st.info("Aktuell laufen keine Hintergrund-Recherchen.")
 
     recent_finished = repository.list_jobs(
         statuses=(JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED),
@@ -76,6 +74,8 @@ def _render_idle_jobs_view(
         _render_recent_finished_section(
             recent_finished, settings, repository, dispatcher, role, cfg, has_active=False
         )
+    else:
+        st.info("Noch keine Jobs vorhanden.")
 
 
 @st.fragment(run_every=UI_LIVE_REFRESH_INTERVAL)
@@ -96,13 +96,12 @@ def _render_live_jobs_fragment(
 
     col_head, col_btn = st.columns([4, 1], vertical_alignment="center")
     with col_head:
-        st.caption("🔄 Aktualisiert sich automatisch alle 3 Sekunden (inkl. Live-Aktionsanzeige).")
+        st.caption(f"🟢 **Live ({total_active_count})** · Auto-Refresh (3s)")
     with col_btn:
-        if st.button("Jetzt prüfen", key="live_check_btn", width="stretch"):
+        if st.button("🔄 Refresh", key="live_check_btn", width="stretch"):
             st.rerun(scope="fragment")
 
     active_jobs = repository.list_jobs(statuses=ACTIVE_JOB_STATUSES, limit=50)
-    st.subheader(f"Aktive Recherchen ({total_active_count})")
     for job in active_jobs:
         _render_active_job_card(
             job=job,
@@ -132,8 +131,8 @@ def _render_recent_finished_section(
     cfg: DomainConfig,
     has_active: bool,
 ) -> None:
-    """Zeigt die letzten bis zu 10 Recherchen mit schlanker Status-, Laufzeit- und Modellzeile."""
-    with st.expander("Letzte Recherchen", expanded=not has_active):
+    """Zeigt die letzten bis zu 10 Jobs mit kompakter Status-, Laufzeit- und Modellzeile."""
+    with st.expander(f"🕓 History ({len(recent_finished)})", expanded=not has_active):
         has_failed_or_cancelled = any(
             j.status in {JobStatus.FAILED, JobStatus.CANCELLED} for j in recent_finished
         )
@@ -141,7 +140,7 @@ def _render_recent_finished_section(
             role == AuthRole.ADMIN
             and has_failed_or_cancelled
             and st.button(
-                "🧹 Fehlgeschlagene & abgebrochene Einträge entfernen",
+                "🧹 Failed/Cancelled löschen",
                 key="purge_failed_cancelled_jobs",
             )
         ):
@@ -182,9 +181,10 @@ def _render_recent_job_card(
     role: AuthRole,
     cfg: DomainConfig,
 ) -> None:
-    """Rendert eine kompakte Karte für vergangene Recherchen ohne Anzeige der internen ID."""
+    """Rendert eine kompakte Karte für vergangene Jobs."""
     _ = dispatcher
     profile = cfg.get_depth_profile(job.depth)
+    badge = _STATUS_BADGES.get(job.status, job.status.value)
     job_model = normalize_preferred_model(
         getattr(job, "model", None) or cfg.default_model,
         allowed_models=cfg.available_models,
@@ -194,15 +194,14 @@ def _render_recent_job_card(
     )
     date_str = format_datetime_german(job.created_at)
     is_completed = job.status == JobStatus.COMPLETED
-    completed_str = "Abgeschlossen: Ja" if is_completed else "Abgeschlossen: Nein"
     duration_str = _compute_job_duration_label(job)
 
     with st.container(border=True):
-        col_main, col_actions = st.columns([3.6, 1.4], vertical_alignment="center")
+        col_main, col_actions = st.columns([3.7, 1.3], vertical_alignment="center")
         with col_main:
             st.markdown(f"**{job.topic}**")
             st.caption(
-                f"{date_str} · {completed_str} · Laufzeit: {duration_str} · {profile.label} · {fmt_preset.label} · 🤖 `{job_model}`"
+                f"{badge} · ⏱️ {duration_str} · {profile.label} · {fmt_preset.label} · 🤖 `{job_model}` · {date_str}"
             )
         with col_actions:
             _render_finished_job_actions(
@@ -214,7 +213,7 @@ def _render_recent_job_card(
             )
 
         if job.error_message and not is_completed:
-            st.error(f"Fehler: {job.error_message}")
+            st.error(f"Error: {job.error_message}")
 
 
 def _render_finished_job_actions(
@@ -224,12 +223,11 @@ def _render_finished_job_actions(
     role: AuthRole,
     is_completed: bool,
 ) -> None:
-    """Verwaltungsaktionen für abgeschlossene oder abgebrochene Recherchen."""
-    _ = settings
+    """Verwaltungsaktionen für abgeschlossene oder abgebrochene Jobs."""
     if is_completed:
-        col_view, col_del = st.columns([1.2, 1.0])
+        col_view, col_del = st.columns([1.3, 0.9])
         with col_view:
-            if st.button("📄 Bericht", key=f"view_rep_{job.id}", width="stretch"):
+            if st.button("📄 Report", key=f"view_rep_{job.id}", width="stretch"):
                 st.query_params["tab"] = "reports"
                 st.query_params["job_id"] = job.id
                 st.session_state["_force_nav_tab"] = "reports"
@@ -238,7 +236,7 @@ def _render_finished_job_actions(
             if role == AuthRole.ADMIN and st.button(
                 "🗑️",
                 key=f"del_done_{job.id}",
-                help="Auftrag & Bericht löschen",
+                help="Job & Report löschen",
                 width="stretch",
             ):
                 repository.delete_job_and_report(job.id)
@@ -248,11 +246,11 @@ def _render_finished_job_actions(
     if role == AuthRole.ADMIN:
         col_res, col_del = st.columns(2)
         with col_res:
-            if st.button("🔁", key=f"retry_{job.id}", help="Auftrag fortsetzen", width="stretch"):
+            if st.button("🔁", key=f"retry_{job.id}", help="Resume Job", width="stretch"):
                 _resume_interrupted_job(job, settings, repository)
                 _stay_on_jobs_tab_and_rerun()
         with col_del:
-            if st.button("🗑️", key=f"del_fin_{job.id}", help="Auftrag löschen", width="stretch"):
+            if st.button("🗑️", key=f"del_fin_{job.id}", help="Delete Job", width="stretch"):
                 repository.delete_job_and_report(job.id)
                 st.rerun()
 
@@ -265,7 +263,7 @@ def _render_active_job_card(
     role: AuthRole,
     cfg: DomainConfig,
 ) -> None:
-    """Rendert die Live-Karte eines aktuell laufenden Auftrags ohne Anzeige der internen ID."""
+    """Rendert die Live-Karte eines aktuell laufenden Jobs."""
     profile = cfg.get_depth_profile(job.depth)
     badge = _STATUS_BADGES.get(job.status, job.status.value)
     job_model = normalize_preferred_model(
@@ -278,10 +276,10 @@ def _render_active_job_card(
     date_str = format_datetime_german(job.created_at)
 
     with st.container(border=True):
-        top_left, top_right = st.columns([3.4, 1.6], vertical_alignment="center")
+        top_left, top_right = st.columns([3.5, 1.5], vertical_alignment="center")
         with top_left:
             st.markdown(f"**{job.topic}**")
-            st.caption(f"{badge} · {date_str} · {profile.label} · {fmt_preset.label} · 🤖 `{job_model}`")
+            st.caption(f"{badge} · {profile.label} · {fmt_preset.label} · 🤖 `{job_model}` · {date_str}")
         with top_right:
             if role == AuthRole.ADMIN:
                 _render_active_admin_actions(job, settings, repository, dispatcher)
@@ -289,7 +287,7 @@ def _render_active_job_card(
         st.progress(job.progress_percent / 100.0, text=f"{job.progress_percent}% – {job.status_message}")
 
         if job.progress_log:
-            with st.expander("Aktivitätsprotokoll anzeigen", expanded=False):
+            with st.expander("📜 Live-Log", expanded=False):
                 for entry in reversed(job.progress_log[-15:]):
                     log_time = format_datetime_german(entry.timestamp_iso)
                     st.text(f"[{log_time}] ({entry.phase.value}) {entry.message}")
@@ -305,20 +303,20 @@ def _render_active_admin_actions(
     btn_stop, btn_del = st.columns(2)
     with btn_stop:
         if st.button(
-            "⏹️ Stopp",
+            "⏹️ Stop",
             key=f"cancel_{job.id}",
             width="stretch",
-            help="Prozess sofort beenden",
+            help="Sofort stoppen",
         ):
             repository.request_cancellation(job.id)
             dispatcher.stop_job_execution(job.id, worker_id=job.worker_id)
             _stay_on_jobs_tab_and_rerun()
     with btn_del:
         if st.button(
-            "🗑️ Löschen",
+            "🗑️",
             key=f"del_active_{job.id}",
             width="stretch",
-            help="Prozess beenden & Auftrag direkt löschen",
+            help="Stoppen & löschen",
         ):
             repository.request_cancellation(job.id)
             dispatcher.stop_job_execution(job.id, worker_id=job.worker_id)
@@ -340,3 +338,4 @@ def _resume_interrupted_job(
     if repository.requeue_job_from_checkpoint(job.id):
         dispatcher = JobDispatcher(settings)
         dispatcher.dispatch(job.id, depth=job.depth)
+

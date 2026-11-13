@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
-from src.domain.domain_config import DomainConfig
+from src.domain.domain_config import DomainConfig, ModelRoutingConfig
 from src.domain.enums import AuthRole, ResearchDepth
 from src.domain.exceptions import DispatchError, InputValidationError, ResearchBotError
 from src.research.gemini_client import fetch_available_gemini_models
@@ -16,6 +18,34 @@ from src.ui.views.model_routing_dialog import render_model_routing_dialog
 from src.worker.dispatcher import JobDispatcher
 
 __all__ = ["fetch_available_gemini_models", "render_new_research_view"]
+
+
+def _render_routing_pill_bar(routing: ModelRoutingConfig) -> None:
+    """Rendert eine kompakte Pill-Statusleiste für das aktive Modell- und Tool-Routing."""
+    active_tools: list[str] = []
+    if routing.enable_google_search:
+        active_tools.append("🟢 Google")
+    if routing.enable_duckduckgo_search:
+        active_tools.append("🦆 DDG")
+    if routing.enable_reddit_search:
+        active_tools.append("💬 Reddit")
+    if routing.enable_hackernews_search:
+        active_tools.append("🔶 HN")
+    if routing.enable_wikipedia_search:
+        active_tools.append("📚 Wiki")
+    if routing.enable_arxiv_search:
+        active_tools.append("🔬 arXiv")
+    tools_str = html.escape(" · ".join(active_tools) if active_tools else "LLM only")
+    model_str = html.escape(routing.research_primary_model)
+
+    st.markdown(
+        f'<div class="rb-pill-bar">'
+        f'<span class="rb-pill">🤖 <code>{model_str}</code></span>'
+        f'<span class="rb-pill">{tools_str}</span>'
+        f'<span class="rb-pill">⚡ {int(routing.max_rpm)} RPM</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_new_research_view(
@@ -30,9 +60,9 @@ def render_new_research_view(
     if st.session_state.get("_new_job_started", False):
         col_alert, col_btn = st.columns([3, 1], vertical_alignment="center")
         with col_alert:
-            st.success("Auftrag gestartet! Der Job läuft nun im Hintergrund.")
+            st.success("Job gestartet und läuft im Hintergrund.")
         with col_btn:
-            if st.button("👉 Zum laufenden Job", type="primary", width="stretch", key="btn_jump_to_jobs"):
+            if st.button("👉 Zu den Jobs", type="primary", width="stretch", key="btn_jump_to_jobs"):
                 st.session_state.pop("_new_job_started", None)
                 st.session_state["_force_nav_tab"] = "jobs"
                 st.rerun()
@@ -42,90 +72,65 @@ def render_new_research_view(
         st.success(str(flash_msg))
 
     if role != AuthRole.ADMIN:
-        st.info(
-            "Du befindest dich im **Lese-Modus**. Melde dich links in der Seitenleiste als Admin an, "
-            "um neue Recherche-Aufträge zu starten."
-        )
+        st.info("🔒 **Read-Only** – Bitte in der Sidebar als Admin einloggen.")
         return
 
     if not settings.has_gemini_configured:
-        st.warning(
-            "⚠️ Noch kein gültiger `GEMINI_API_KEY` konfiguriert. "
-            "Hinterlege den Key in `.env` bzw. den Streamlit Secrets, bevor du einen Auftrag startest."
-        )
+        st.warning("⚠️ `GEMINI_API_KEY` fehlt in `.env` oder `st.secrets`.")
 
     depth_options = list(ResearchDepth)
     default_depth_idx = depth_options.index(cfg.default_depth)
     format_keys = list(cfg.report_formats.keys())
     default_fmt_idx = format_keys.index(cfg.default_report_format) if cfg.default_report_format in format_keys else 0
-
     routing = cfg.model_routing
-    active_tools: list[str] = []
-    if routing.enable_duckduckgo_search:
-        active_tools.append("🦆 DDG")
-    if routing.enable_reddit_search:
-        active_tools.append("💬 Reddit")
-    if routing.enable_hackernews_search:
-        active_tools.append("🔶 HN")
-    if routing.enable_wikipedia_search:
-        active_tools.append("📚 Wiki")
-    if routing.enable_arxiv_search:
-        active_tools.append("🔬 arXiv")
-    tools_str = " · ".join(active_tools) if active_tools else "Reines LLM"
-    google_flag = "🟢 Google Search" if routing.enable_google_search else "⚪ Google Search (aus)"
 
-    col_info, col_btn = st.columns([3.2, 1.2], vertical_alignment="center")
+    col_info, col_btn = st.columns([3.5, 1.0], vertical_alignment="center")
     with col_info:
-        st.caption(
-            f"⚡ **KI-Routing:** `{routing.research_primary_model}` · {google_flag} · {tools_str} · **{routing.max_rpm} RPM**"
-        )
+        _render_routing_pill_bar(routing)
     with col_btn:
-        if st.button("🎛️ Routing & Tools", width="stretch", help="Modelle, alternative Such-Tools und RPM-Limits anpassen"):
+        if st.button("🎛️ Routing & Tools", width="stretch", help="Models, Search Tools & Rate Limits"):
             render_model_routing_dialog(repository, cfg, role)
 
     with st.form("create_research_job_form", clear_on_submit=False):
         topic = st.text_input(
-            "🔎 Recherche-Thema oder Leitfrage *",
-            placeholder="z. B. Top 7 Badeseen in Bayern – nur eine knappe Liste",
+            "🔎 Recherche-Thema *",
+            placeholder="z. B. Top 7 Badeseen in Bayern – kurze Liste",
             max_chars=300,
         )
         focus_instructions = st.text_area(
-            "🎯 Optionale Schwerpunkte, Formatwünsche oder auszuschließende Aspekte",
-            placeholder="z. B. Nur eine knappe Stichpunktliste mit Wasserqualität & Anfahrt – kein langer Fließtext...",
-            height=95,
+            "🎯 Fokus & Constraints (optional)",
+            placeholder="z. B. Fokus auf Wasserqualität & Anfahrt, kein Fließtext...",
+            height=80,
             max_chars=2000,
         )
 
-        col_fmt, col_depth, col_lang = st.columns([1.3, 1.4, 0.9])
+        col_fmt, col_depth, col_lang = st.columns([1.3, 1.3, 0.8])
         with col_fmt:
             selected_format = st.selectbox(
-                "📐 Berichtsformat & Stil",
+                "📐 Format",
                 options=format_keys,
                 index=default_fmt_idx,
                 format_func=lambda k: cfg.report_formats[k].label,
-                help="Steuert Struktur und Kürze des Berichts (anpassbar im Tab '🎛️ KI- & Fachlogik').",
             )
         with col_depth:
             selected_depth = st.selectbox(
-                "🔎 Recherche-Tiefe & Zielumfang",
+                "⚡ Depth",
                 options=depth_options,
                 index=default_depth_idx,
                 format_func=lambda d: (
-                    f"{cfg.get_depth_profile(d).label} "
-                    f"({cfg.get_depth_profile(d).estimated_duration_label} · {cfg.get_depth_profile(d).target_word_range})"
+                    f"{cfg.get_depth_profile(d).label} ({cfg.get_depth_profile(d).estimated_duration_label})"
                 ),
-                help="Alle Tiefenprofile und Wortumfänge sind unter '🎛️ KI- & Fachlogik' frei editierbar.",
             )
         with col_lang:
             selected_lang = st.selectbox(
-                "🌐 Berichtssprache",
+                "🌐 Sprache",
                 options=["de", "en"],
                 index=0 if cfg.default_language == "de" else 1,
                 format_func=lambda code: "Deutsch" if code == "de" else "English",
             )
 
         submitted = st.form_submit_button(
-            "🚀 Recherche im Hintergrund starten",
+            "🚀 Recherche starten",
             type="primary",
             width="stretch",
             disabled=not settings.has_gemini_configured,
@@ -172,15 +177,12 @@ def _handle_job_submission(
         dispatcher = JobDispatcher(settings)
         dispatcher.dispatch(job.id, depth=validated.depth)
         st.session_state["_force_nav_tab"] = "jobs"
-        st.session_state["_jobs_tab_flash"] = (
-            "✅ Recherche-Auftrag erfolgreich gestartet! Der Job läuft nun im Hintergrund."
-        )
+        st.session_state["_jobs_tab_flash"] = "✅ Job erfolgreich gestartet."
         st.rerun()
     except InputValidationError as exc:
         st.error(f"Eingabefehler: {exc}")
     except DispatchError as exc:
-        st.warning(
-            f"Auftrag wurde in der Warteschlange gespeichert, aber der Direktstart meldete: {exc}"
-        )
+        st.warning(f"In Queue gespeichert (Direktstart-Hinweis: {exc})")
     except ResearchBotError as exc:
-        st.error(f"Auftrag konnte nicht angelegt werden: {exc}")
+        st.error(f"Fehler beim Starten: {exc}")
+

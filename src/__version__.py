@@ -1,3 +1,4 @@
 """Zentrale Versionsdefinition (Semantic Versioning)."""
 
-__version__: str = "0.11.6"
+__version__: str = "0.12.0"
+

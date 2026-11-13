@@ -1,4 +1,4 @@
-"""Kompakter Modal-Dialog zur Konfiguration der KI-Modell- und Tool-Routing-Strategie."""
+"""Kompakter Modal-Dialog zur Konfiguration der Model- und Tool-Routing-Strategie."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from src.domain.exceptions import ResearchBotError
 from src.storage.base_repository import ResearchRepository
 
 
-@st.dialog("🎛️ KI-Modell- & Tool-Routing (Was, wann, wie)", width="large")
+@st.dialog("🎛️ Model & Tool Routing", width="large")
 def render_model_routing_dialog(
     repository: ResearchRepository,
     cfg: DomainConfig,
@@ -21,16 +21,11 @@ def render_model_routing_dialog(
     available = cfg.available_models
     is_admin = role == AuthRole.ADMIN
 
-    st.caption(
-        "Wähle KI-Modelle und kostenfreie Recherche-Tools, um API-Limits (z. B. **15 RPM**) "
-        "zu umgehen und die Ergebnis-Bandbreite drastisch zu erhöhen."
-    )
-
     tab_models, tab_tools, tab_pacing = st.tabs(
         [
-            "🤖 KI-Modelle & Fallbacks",
-            "🛠️ Recherche- & Prüf-Tools",
-            "⏱️ Pacing & Faktenprüfung",
+            "🤖 Models",
+            "🛠️ Search Tools",
+            "⏱️ Rate Limits & Check",
         ]
     )
 
@@ -38,92 +33,102 @@ def render_model_routing_dialog(
         c1, c2 = st.columns(2)
         with c1:
             p_idx = available.index(routing.planning_model) if routing.planning_model in available else 0
-            new_plan = st.selectbox("1. Planungs-Modell", available, index=p_idx, disabled=not is_admin, key="r_plan")
+            new_plan = st.selectbox("Planner Model", available, index=p_idx, disabled=not is_admin, key="r_plan")
             prim_idx = available.index(routing.research_primary_model) if routing.research_primary_model in available else 0
-            new_prim = st.selectbox("2. Primäre Recherche", available, index=prim_idx, disabled=not is_admin, key="r_prim")
+            new_prim = st.selectbox("Primary Research Model", available, index=prim_idx, disabled=not is_admin, key="r_prim")
         with c2:
             fall_idx = available.index(routing.research_fallback_model) if routing.research_fallback_model in available else 0
-            new_fall = st.selectbox("Fallback (bei 429/Last)", available, index=fall_idx, disabled=not is_admin, key="r_fall")
+            new_fall = st.selectbox("Fallback Model (429)", available, index=fall_idx, disabled=not is_admin, key="r_fall")
             syn_idx = available.index(routing.synthesizer_model) if routing.synthesizer_model in available else 0
-            new_synth = st.selectbox("3. Synthese-Modell", available, index=syn_idx, disabled=not is_admin, key="r_syn")
+            new_synth = st.selectbox("Synthesizer Model", available, index=syn_idx, disabled=not is_admin, key="r_syn")
 
     with tab_tools:
-        st.markdown("**Kostenfreie Datenquellen & Extraktions-Engines:**")
         t_col1, t_col2 = st.columns(2)
         with t_col1:
             new_google = st.checkbox(
-                "🌐 Google Search Tool (Grounding)",
+                "🌐 Google Search (Grounding)",
                 value=routing.enable_google_search,
                 disabled=not is_admin,
                 key="t_google",
-                help="Gemini-eigenes Grounding (deaktivieren bei 429 / Free-Tier)",
+                help="Gemini Grounding (bei Free-Tier 429 deaktivieren)",
             )
             new_ddg = st.checkbox(
-                "🦆 DuckDuckGo (Kostenfreie Websuche)",
+                "🦆 DuckDuckGo Search",
                 value=routing.enable_duckduckgo_search,
                 disabled=not is_admin,
                 key="t_ddg",
-                help="Key-freie Web-Suche via DuckDuckGo Lite",
+                help="Key-freie Websuche via DuckDuckGo Lite",
             )
             new_reddit = st.checkbox(
-                "💬 Reddit Community (Erfahrungen & Meinungen)",
+                "💬 Reddit Search",
                 value=routing.enable_reddit_search,
                 disabled=not is_admin,
                 key="t_reddit",
-                help="Durchsucht reale Nutzerdiskussionen & Praxisberichte auf Reddit",
+                help="Community-Erfahrungen & Diskussionen",
             )
             new_jina = st.checkbox(
-                "⚡ Jina AI Reader (Saubere Volltexte)",
+                "⚡ Jina AI Reader",
                 value=routing.enable_jina_reader,
                 disabled=not is_admin,
                 key="t_jina",
-                help="Bypasst Cookie-Banner & JS-Bloat für reine Markdown-Artikel",
+                help="Saubere Markdown-Extraktion ohne JS-Bloat",
             )
         with t_col2:
             new_hn = st.checkbox(
-                "🔶 Hacker News (Tech-, Startup- & Fachthemen)",
+                "🔶 Hacker News",
                 value=routing.enable_hackernews_search,
                 disabled=not is_admin,
                 key="t_hn",
-                help="Offizielle Algolia API für fundierte Tech- & Software-Quellen",
+                help="Algolia API für Tech- & Software-Quellen",
             )
             new_wiki = st.checkbox(
-                "📚 Wikipedia (Enzyklopädische Fakten)",
+                "📚 Wikipedia API",
                 value=routing.enable_wikipedia_search,
                 disabled=not is_admin,
                 key="t_wiki",
-                help="Offizielle MediaWiki-API für solide enzyklopädische Basis-Fakten",
+                help="MediaWiki-API für Basis-Fakten",
             )
             new_arxiv = st.checkbox(
-                "🔬 arXiv (Wissenschaft & Preprints)",
+                "🔬 arXiv Preprints",
                 value=routing.enable_arxiv_search,
                 disabled=not is_admin,
                 key="t_arxiv",
-                help="Offizielle arXiv-API für Preprints, KI- & wissenschaftliche Papers",
+                help="Wissenschaftliche Papers & Preprints",
             )
             new_bb = st.checkbox(
-                "🌐 Browserbase (Headless Cloud-Browser)",
+                "🌐 Browserbase (Cloud Browser)",
                 value=routing.enable_browserbase,
                 disabled=not is_admin,
                 key="t_bb",
-                help="Aktivierbar, wenn BROWSERBASE_API_KEY hinterlegt ist",
+                help="Erfordert BROWSERBASE_API_KEY",
             )
 
     with tab_pacing:
         p_c1, p_c2 = st.columns(2)
         with p_c1:
-            new_rpm = st.number_input("Max. RPM (Cap)", 1, 60, routing.max_rpm, disabled=not is_admin, key="p_rpm")
-            new_single = st.checkbox("⚡ Single-Pass Modus", routing.single_pass_research, disabled=not is_admin, key="p_sp", help="1 Call pro Teilthema (spart 75% API-Calls)")
+            new_rpm = st.number_input("Max RPM", 1, 60, routing.max_rpm, disabled=not is_admin, key="p_rpm")
+            new_single = st.checkbox(
+                "⚡ Single-Pass Mode",
+                routing.single_pass_research,
+                disabled=not is_admin,
+                key="p_sp",
+                help="1 Call pro Subtopic (-75% API Calls)",
+            )
         with p_c2:
-            new_pace = st.number_input("Mindestabstand (Sek.)", 0.5, 30.0, float(routing.min_call_interval_seconds), 0.5, disabled=not is_admin, key="p_pace")
-            new_verif = st.checkbox("🔍 Multi-Source-Prüfung", routing.enable_cross_verification, disabled=not is_admin, key="p_verif", help="Gleicht Fakten über Web, Reddit, HN und Wiki ab")
+            new_pace = st.number_input("Min. Interval (s)", 0.5, 30.0, float(routing.min_call_interval_seconds), 0.5, disabled=not is_admin, key="p_pace")
+            new_verif = st.checkbox(
+                "🔍 Cross-Source Verification",
+                routing.enable_cross_verification,
+                disabled=not is_admin,
+                key="p_verif",
+                help="Gleicht Fakten über Web, Reddit, HN und Wiki ab",
+            )
 
-    st.markdown("---")
     if not is_admin:
-        st.info("🔒 Nur Administratoren können die Routing-Strategie speichern.")
+        st.info("🔒 Read-Only: Nur Admins können das Routing ändern.")
         return
 
-    if st.button("💾 Einstellungen jetzt dauerhaft speichern", type="primary", width="stretch", key="btn_save_routing"):
+    if st.button("💾 Speichern", type="primary", width="stretch", key="btn_save_routing"):
         _save_routing(
             repository=repository,
             cfg=cfg,
@@ -187,7 +192,8 @@ def _save_routing(
     updated_cfg = cfg.model_copy(update={"model_routing": updated})
     try:
         repository.save_domain_config(updated_cfg)
-        st.session_state["_new_job_flash"] = "✅ KI-Modell- & Tool-Routing erfolgreich dauerhaft gespeichert!"
+        st.session_state["_new_job_flash"] = "✅ Routing gespeichert."
         st.rerun()
     except ResearchBotError as exc:
         st.error(f"Fehler beim Speichern: {exc}")
+

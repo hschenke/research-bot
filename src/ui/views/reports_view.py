@@ -1,4 +1,4 @@
-"""Tab 3: Ergebnis-Archiv mit Volltextsuche, Quellen-Explorer, Export und E-Mail-Nachversand."""
+"""Tab 3: Reports-Archiv mit Suche, Export und E-Mail-Versand."""
 
 from __future__ import annotations
 
@@ -28,30 +28,34 @@ def render_reports_view(
     role: AuthRole,
     domain_config: DomainConfig | None = None,
 ) -> None:
-    """Rendert die Übersicht und Detailansicht aller fertiggestellten Recherche-Berichte."""
+    """Rendert die Übersicht und Detailansicht aller fertiggestellten Reports."""
     cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
-    search_query = st.text_input(
-        "🔍 Berichte durchsuchen",
-        placeholder="Thema, Stichwort oder Inhalt filtern...",
-    )
-    reports = repository.list_reports(search_query=search_query, limit=50)
 
+    col_sel, col_search = st.columns([2.2, 1.1], vertical_alignment="bottom")
+    with col_search:
+        search_query = st.text_input(
+            "🔍 Filter",
+            placeholder="Stichwort oder Thema...",
+        )
+
+    reports = repository.list_reports(search_query=search_query, limit=50)
     if not reports:
-        st.info("Noch keine fertiggestellten Recherche-Berichte gefunden.")
+        st.info("Keine Reports gefunden.")
         return
 
     preselected_id = str(st.query_params.get("job_id", "") or "").strip()
     report_ids = [r.job_id for r in reports]
     default_index = report_ids.index(preselected_id) if preselected_id in report_ids else 0
 
-    selected_report = st.selectbox(
-        f"📚 Verfügbare Berichte ({len(reports)})",
-        options=reports,
-        index=default_index,
-        format_func=lambda r: (
-            f"{r.title}  ·  [{format_datetime_german(r.created_at)} | {cfg.get_depth_profile(r.depth).label}]"
-        ),
-    )
+    with col_sel:
+        selected_report = st.selectbox(
+            f"📚 Reports ({len(reports)})",
+            options=reports,
+            index=default_index,
+            format_func=lambda r: (
+                f"{r.title}  ·  {format_datetime_german(r.created_at)} · {cfg.get_depth_profile(r.depth).label}"
+            ),
+        )
 
     if selected_report is not None:
         if st.query_params.get("job_id") != selected_report.job_id:
@@ -66,26 +70,19 @@ def render_reports_view(
 
 
 def _render_metadata_badge_bar(report: ResearchReport, cfg: DomainConfig) -> None:
-    """Rendert eine kompakte, elegante Metadaten-Leiste ohne klobige Boxen."""
+    """Rendert eine kompakte Pill-Metadaten-Leiste."""
     depth_label = html.escape(cfg.get_depth_profile(report.depth).label)
     duration = html.escape(format_duration_human(report.duration_seconds))
     sources_count = len(report.citations)
     created_at = html.escape(format_datetime_german(report.created_at))
 
     st.markdown(
-        f"""
-        <div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
-                    background: rgba(127, 127, 127, 0.08); border: 1px solid rgba(127, 127, 127, 0.16);
-                    border-radius: 8px; padding: 8px 14px; margin: 0.5rem 0 1rem 0; font-size: 0.88rem;">
-            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Tiefe</span> <b>{depth_label}</b></div>
-            <div style="opacity: 0.25;">•</div>
-            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Laufzeit</span> <b>⏱️ {duration}</b></div>
-            <div style="opacity: 0.25;">•</div>
-            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Quellen</span> <b>📚 {sources_count} verifiziert</b></div>
-            <div style="opacity: 0.25;">•</div>
-            <div><span style="opacity: 0.6; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Erstellt</span> <b>🗓️ {created_at}</b></div>
-        </div>
-        """,
+        f'<div class="rb-pill-bar">'
+        f'<span class="rb-pill">{depth_label}</span>'
+        f'<span class="rb-pill">⏱️ {duration}</span>'
+        f'<span class="rb-pill">🔗 {sources_count} Sources</span>'
+        f'<span class="rb-pill">🗓️ {created_at}</span>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
@@ -97,9 +94,6 @@ def _render_single_report(
     role: AuthRole,
     cfg: DomainConfig,
 ) -> None:
-    st.divider()
-    _render_metadata_badge_bar(report, cfg)
-
     app_url = build_report_app_url(
         base_url=settings.streamlit_app_url,
         job_id=report.job_id,
@@ -109,36 +103,43 @@ def _render_single_report(
         report=report, app_report_url=app_url, domain_config=cfg
     )
 
-    dl_col1, dl_col2, mail_col, del_col = st.columns([1.2, 1.2, 1.6, 1])
+    meta_col, dl_col1, dl_col2, mail_col, del_col = st.columns(
+        [2.2, 0.85, 0.85, 0.9, 0.55], vertical_alignment="center"
+    )
+    with meta_col:
+        _render_metadata_badge_bar(report, cfg)
     with dl_col1:
         st.download_button(
-            "⬇️ Markdown (.md)",
+            "⬇️ .md",
             data=report.content_markdown.encode("utf-8"),
             file_name=f"research_{report.job_id}.md",
             mime="text/markdown",
             width="stretch",
+            help="Markdown herunterladen",
         )
     with dl_col2:
         st.download_button(
-            "⬇️ HTML-Dossier (.html)",
+            "⬇️ .html",
             data=html_export.encode("utf-8"),
             file_name=f"research_{report.job_id}.html",
             mime="text/html",
             width="stretch",
+            help="HTML-Report herunterladen",
         )
     with mail_col:
         can_send_mail = role == AuthRole.ADMIN and settings.has_email_configured
         if can_send_mail and st.button(
-            "📧 Per E-Mail senden",
+            "📧 E-Mail",
             key=f"send_mail_{report.job_id}",
             width="stretch",
         ):
             _resend_report_email(report=report, settings=settings, repository=repository)
     with del_col:
         if role == AuthRole.ADMIN and st.button(
-            "🗑️ Löschen",
+            "🗑️",
             key=f"del_rep_{report.job_id}",
             width="stretch",
+            help="Report löschen",
         ):
             repository.delete_job_and_report(report.job_id)
             st.rerun()
@@ -154,11 +155,12 @@ def _resend_report_email(
 ) -> None:
     job = repository.get_job(report.job_id)
     if job is None:
-        st.error("Zugehöriger Auftragsdatensatz nicht gefunden.")
+        st.error("Job nicht gefunden.")
         return
     notifier = EmailNotifier(settings)
     if notifier.notify_report_ready(job=job, report=report):
         repository.mark_job_email_sent(job.id)
-        st.success("✅ Bericht wurde erfolgreich per E-Mail versendet.")
+        st.success("✅ E-Mail gesendet.")
     else:
-        st.error("E-Mail-Versand fehlgeschlagen. Bitte E-Mail-Einstellungen und Empfänger prüfen.")
+        st.error("E-Mail-Versand fehlgeschlagen.")
+

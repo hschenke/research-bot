@@ -118,33 +118,31 @@ def determine_session_role(settings: AppSettings) -> AuthRole:
 def render_login_gate_or_sidebar(settings: AppSettings, current_role: AuthRole) -> bool:
     """Rendert die Anmeldemaske bzw. den Sidebar-Status inklusive Cookie-Synchronisation."""
     if not settings.app_password:
-        st.sidebar.caption("🔓 Lokaler Modus (kein `APP_PASSWORD` gesetzt)")
+        st.sidebar.caption("🔓 Local Mode")
         return True
 
     if current_role == AuthRole.ADMIN:
-        # Falls ein neues Token vorliegt, dauerhaftes Cookie im Browser hinterlegen
         token_to_persist = st.session_state.get("_pending_cookie_token") or st.query_params.get("auth")
         if token_to_persist:
             _inject_auth_cookie_js(token_to_persist)
 
-        st.sidebar.success("🔐 Angemeldet als **Administrator** (Cookie aktiv)")
-        if st.sidebar.button("Abmelden", width="stretch"):
+        st.sidebar.success("🔐 **Admin** · Session aktiv")
+        if st.sidebar.button("Logout", width="stretch"):
             _perform_logout()
             st.rerun()
         return True
 
     if current_role == AuthRole.READONLY:
-        st.sidebar.info("👁️ **Lese-Modus** (über signierten E-Mail-Link)")
-        with st.sidebar.expander("🔑 Als Admin anmelden"):
+        st.sidebar.info("👁️ **Read-Only**")
+        with st.sidebar.expander("🔑 Admin-Login"):
             _render_password_form(settings, form_key="sidebar_admin_login")
         return True
 
-    # Automatische Wiederherstellung aus Browser-Speicher versuchen
     if not st.session_state.get("explicit_logout"):
         _inject_cookie_restore_js()
 
-    st.markdown("## 🔐 Anmeldung erforderlich")
-    st.caption("Bitte gib das App-Passwort ein. Die Anmeldung wird für 30 Tage als Cookie gespeichert.")
+    st.markdown("### 🔐 Login")
+    st.caption("Passwort eingeben (30 Tage Session-Cookie).")
     _render_password_form(settings, form_key="gate_admin_login")
     return False
 
@@ -153,12 +151,12 @@ def _render_password_form(settings: AppSettings, form_key: str) -> None:
     limiter = _get_rate_limiter()
     locked, remaining_sec = limiter.is_locked_out()
     if locked:
-        st.error(f"Zu viele Fehlversuche. Bitte {remaining_sec} Sekunden warten.")
+        st.error(f"Zu viele Versuche. Bitte {remaining_sec}s warten.")
         return
 
     with st.form(form_key):
-        password_input = st.text_input("App-Passwort", type="password")
-        submitted = st.form_submit_button("Anmelden (30 Tage merken)", type="primary", width="stretch")
+        password_input = st.text_input("Passwort", type="password")
+        submitted = st.form_submit_button("Login", type="primary", width="stretch")
 
     if not submitted:
         return

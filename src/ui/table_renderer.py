@@ -191,6 +191,6 @@ def render_markdown_with_interactive_tables(
             if s_col and s_col in df.columns:
                 df = _sort_dataframe(df, s_col, s_dir)
             st.markdown(_build_html_table(df, url_columns, s_col, s_dir, job_id), unsafe_allow_html=True)
-            st.caption("💡 *Spaltenköpfe zum Sortieren anklicken · Eingekreistes (?) bei Fachbegriffen.*")
-            with st.expander("📋 Reine Markdown-Tabelle anzeigen", expanded=False):
+            st.caption("💡 *Klick auf Spaltenkopf sortiert · (?) zeigt Kurzinfo*")
+            with st.expander("📋 Raw Markdown", expanded=False):
                 st.markdown("\n".join(table_lines))

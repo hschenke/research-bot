@@ -20,10 +20,10 @@ MAIN_NAV_TAB_KEY: str = "main_navigation_tab"
 NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "rules", "settings")
 NAV_TAB_TITLES: tuple[str, ...] = (
     "🚀 Neue Recherche",
-    "⏳ Laufende Jobs",
-    "📚 Ergebnisse & Archiv",
-    "🎛️ KI- & Fachlogik",
-    "⚙️ Systemstatus",
+    "⏳ Jobs",
+    "📚 Reports",
+    "🎛️ Prompts & Rules",
+    "⚙️ System",
 )
 NAV_KEY_TO_TITLE: dict[str, str] = dict(zip(NAV_TAB_KEYS, NAV_TAB_TITLES, strict=True))
 TITLE_TO_NAV_KEY: dict[str, str] = {v: k for k, v in NAV_KEY_TO_TITLE.items()}
@@ -90,15 +90,16 @@ def run_streamlit_app() -> None:
     repository.cleanup_stuck_cancellations()
     domain_config = repository.get_domain_config()
 
-    st.sidebar.markdown(f"### 🔬 Research-Bot `v{__version__}`")
     role = determine_session_role(settings)
     if not render_login_gate_or_sidebar(settings, role):
         return
 
-    st.title("🔬 Deep Web Research-Bot")
-    st.caption(
-        "Knackige, faktenbasierte Web-Recherche im Hintergrund – mit frei editierbaren KI-Regeln, "
-        "Prompts & Berichtsformaten direkt in der Web-App."
+    st.markdown(
+        f'<div class="rb-header">'
+        f'<div class="rb-brand"><span>🔬</span><span>Research-Bot</span></div>'
+        f'<span class="rb-badge">v{__version__}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
     )
 
     default_tab_title = _sync_navigation_tab_state()

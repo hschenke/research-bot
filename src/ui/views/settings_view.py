@@ -1,10 +1,9 @@
-"""Tab 4: Systemdiagnose, Infrastrukturstatus und Wartung verwaister Hintergrund-Jobs."""
+"""Tab 5: Kompakte Systemdiagnose, Infrastrukturstatus und Stale-Job-Recovery."""
 
 from __future__ import annotations
 
 import streamlit as st
 
-from src.__version__ import __version__
 from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
 from src.domain.domain_config import DomainConfig
@@ -21,65 +20,49 @@ def render_settings_view(
 ) -> None:
     """Zeigt den aktuellen Verbindungsstatus aller Komponenten ohne Preisgabe von Secrets."""
     cfg = domain_config or repository.get_domain_config() or load_default_domain_config()
-    st.subheader("⚙️ System- & Infrastrukturstatus")
-
     effective_worker = resolve_effective_worker_mode(settings)
-    col1, col2 = st.columns(2)
 
+    col1, col2 = st.columns(2)
     with col1:
         with st.container(border=True):
-            st.markdown("**🗄️ Persistenz-Backend**")
-            st.write(f"Aktiv: `{repository.backend_name}`")
-            if settings.has_turso_configured:
-                st.success("Turso Cloud verbunden – Web-App & GitHub-Worker teilen denselben Zustand.")
-            else:
-                st.info("Lokale SQLite-Datenbank aktiv (`data/research_bot.db`).")
+            db_status = "🟢 Turso Cloud" if settings.has_turso_configured else "🟢 SQLite Local"
+            st.markdown(f"**🗄️ Storage** · {db_status}")
+            st.caption(f"Backend: `{repository.backend_name}`")
 
         with st.container(border=True):
-            st.markdown("**🧠 KI-Engine (Google GenAI)**")
-            st.write(f"Aktives Standard-Modell: `{cfg.default_model}`")
-            if settings.has_gemini_configured:
-                st.success("GEMINI_API_KEY ist hinterlegt.")
-            else:
-                st.error("GEMINI_API_KEY fehlt.")
+            ai_status = "🟢 Ready" if settings.has_gemini_configured else "🔴 Key fehlt"
+            st.markdown(f"**🧠 AI Engine** · {ai_status}")
+            st.caption(f"Google GenAI · Primary `{cfg.model_routing.research_primary_model}`")
 
     with col2:
         with st.container(border=True):
-            st.markdown("**⚙️ Hintergrund-Worker (> 1 Std. fähig)**")
-            st.write(f"Konfiguriert: `{settings.worker_mode.value}` -> Aktiv: `{effective_worker.value}`")
-            if effective_worker.value == "github":
-                st.success(f"GitHub Actions Worker aktiv (`{settings.github_repo}`).")
-            else:
-                st.info(
-                    "Lokaler ThreadPool-Worker aktiv. Für >1h Läufe auf Streamlit Cloud "
-                    "`TURSO_URL`, `TURSO_KEY`, `GITHUB_TOKEN` & `GITHUB_REPO` setzen."
-                )
+            w_label = (
+                f"🟢 GitHub Actions (`{settings.github_repo}`)"
+                if effective_worker.value == "github"
+                else "🟢 Local ThreadPool"
+            )
+            st.markdown(f"**⚙️ Worker** · {w_label}")
+            st.caption(f"Mode: `{settings.worker_mode.value}` → `{effective_worker.value}`")
 
         with st.container(border=True):
-            st.markdown("**📧 E-Mail-Benachrichtigung**")
-            st.write(f"Provider: `{settings.email_provider.value}`")
-            if settings.has_email_configured:
-                st.success("E-Mail-Zugangsdaten sind konfiguriert.")
-            else:
-                st.warning("Kein E-Mail-Provider aktiv konfiguriert.")
+            mail_status = "🟢 Ready" if settings.has_email_configured else "⚪ Off"
+            st.markdown(f"**📧 Notifications** · {mail_status}")
+            st.caption(f"Provider: `{settings.email_provider.value}`")
 
     if role == AuthRole.ADMIN:
-        st.divider()
-        st.markdown("**🛠️ Wartung & Recovery**")
         claimable = repository.find_claimable_job_ids(
             stale_timeout_minutes=cfg.stale_job_timeout_minutes,
             limit=10,
         )
-        st.caption(
-            f"Wartende oder verwaiste Jobs (Heartbeat älter als {cfg.stale_job_timeout_minutes} Min.): "
-            f"**{len(claimable)}**"
-        )
-        if claimable and st.button("🔄 Verwaiste Jobs jetzt anstoßen", type="secondary"):
-            dispatcher = JobDispatcher(settings)
-            for job_id in claimable:
-                job = repository.get_job(job_id)
-                dispatcher.dispatch(job_id, depth=job.depth if job else None)
-            st.success(f"{len(claimable)} Job(s) wurden erneut an den Worker übergeben.")
+        with st.container(border=True):
+            c_info, c_btn = st.columns([3.5, 1.3], vertical_alignment="center")
+            with c_info:
+                st.markdown(f"**🛠️ Recovery** · Stale Jobs (>{cfg.stale_job_timeout_minutes}m): **{len(claimable)}**")
+            with c_btn:
+                if claimable and st.button("🔄 Stale Jobs starten", type="secondary", width="stretch"):
+                    dispatcher = JobDispatcher(settings)
+                    for job_id in claimable:
+                        job = repository.get_job(job_id)
+                        dispatcher.dispatch(job_id, depth=job.depth if job else None)
+                    st.success(f"{len(claimable)} Job(s) neu gestartet.")
 
-    st.divider()
-    st.caption(f"Research-Bot Version `v{__version__}`")

@@ -283,9 +283,9 @@ def test_web_app_renders_and_saves_editable_domain_logic(tmp_path: Path) -> None
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        # Prüfe, dass Tab "🎛️ KI- & Fachlogik" samt YAML-Gesamteditor gerendert wurde
+        # Prüfe, dass Tab "🎛️ Prompts & Rules" samt YAML-Editor gerendert wurde
         tab_labels = [t.label for t in at.tabs]
-        assert "🎛️ KI- & Fachlogik" in tab_labels
+        assert "🎛️ Prompts & Rules" in tab_labels
 
         # Ändere die Quellen-Überschrift direkt über das Formular in der Web-App und speichere
         src_inputs = [inp for inp in at.text_input if inp.label == "Quellen-Überschrift (DE)"]
@@ -342,7 +342,7 @@ def test_new_research_form_uses_configured_email_without_ui_input(tmp_path: Path
         # Formular absenden
         topic_input = [inp for inp in at.text_input if "Recherche-Thema" in inp.label][0]
         topic_input.set_value("Recherche ohne Email-Inputfeld")
-        submit_btn = [btn for btn in at.button if "Recherche im Hintergrund starten" in btn.label][0]
+        submit_btn = [btn for btn in at.button if "Recherche starten" in btn.label][0]
         submit_btn.click().run()
         assert not at.exception
 
@@ -376,7 +376,7 @@ def test_domain_config_all_expanders_default_collapsed(tmp_path: Path) -> None:
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        at.session_state["main_navigation_tab"] = "🎛️ KI- & Fachlogik"
+        at.session_state["main_navigation_tab"] = "🎛️ Prompts & Rules"
         at.run()
         assert not at.exception
 

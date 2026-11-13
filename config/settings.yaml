@@ -77,7 +77,7 @@ style:
 
 report_formats:
   compact:
-    label: "⚡ Kompakt & Knackig (Standard)"
+    label: "⚡ Compact (Standard)"
     instructions: |-
       Erstelle einen straffen, hochverdichteten Kurzbericht:
       - Starte mit 3–4 knackigen Kernaussagen (Bullet-Points mit den wichtigsten Fakten/Zahlen).
@@ -86,7 +86,7 @@ report_formats:
     max_subtopics_cap: 0
     omit_wrapper_sections: false
   list:
-    label: "📋 Nur knappe Liste (Ohne Vorwort & Fazit)"
+    label: "📋 Bullet-Liste"
     instructions: |-
       Liefere AUSSCHLIESSLICH eine knappe, sofort scannbare Liste (Bullet-Points oder nummeriert).
       - Pro Eintrag maximal 1 bis 2 kurze Zeilen: Fettgedruckter Kernbegriff + wichtigste Fakten/Zahlen + direkter Quellenlink `[Quelle](URL)`.
@@ -94,13 +94,13 @@ report_formats:
     max_subtopics_cap: 2
     omit_wrapper_sections: true
   comparison_table:
-    label: "📊 Vergleichstabelle + Kurzfakten"
+    label: "📊 Vergleichstabelle"
     instructions: |-
       Stelle eine kompakte Markdown-Vergleichstabelle der wichtigsten Optionen/Kriterien in den Mittelpunkt, ergänzt durch maximal 4–6 knappe Entscheidungs-Stichpunkte mit Quellenlinks. Kein Fließtext-Ballast.
     max_subtopics_cap: 3
     omit_wrapper_sections: true
   detailed_dossier:
-    label: "📑 Fach-Dossier (Tiefgehend, ohne Fülltext)"
+    label: "📑 Deep Dossier"
     instructions: |-
       Erstelle ein klar strukturiertes, analytisches Fach-Dossier mit kurzem TL;DR, faktenreichen Fachkapiteln (Zahlen, Vergleiche, Chancen/Risiken) und knapper Einordnung – hohe Informationsdichte ohne leere Prosa.
     max_subtopics_cap: 0
@@ -108,8 +108,8 @@ report_formats:
 
 depth_profiles:
   quick:
-    label: "⚡ Schnellüberblick"
-    estimated_duration_label: "ca. 20–60 Sek."
+    label: "⚡ Quick"
+    estimated_duration_label: "~30s"
     subtopic_count: 3
     target_word_range: "100–250 Wörter"
     max_subtopic_bullets: 4
@@ -121,8 +121,8 @@ depth_profiles:
     prefer_deep_model: false
     inter_step_pause_seconds: 0.0
   standard:
-    label: "🔎 Standard-Recherche"
-    estimated_duration_label: "ca. 2–5 Min."
+    label: "🔎 Standard"
+    estimated_duration_label: "2–4 Min."
     subtopic_count: 6
     target_word_range: "200–450 Wörter"
     max_subtopic_bullets: 5
@@ -134,8 +134,8 @@ depth_profiles:
     prefer_deep_model: false
     inter_step_pause_seconds: 0.2
   deep:
-    label: "🧠 Tiefenrecherche"
-    estimated_duration_label: "ca. 10–25 Min."
+    label: "🧠 Deep"
+    estimated_duration_label: "10–20 Min."
     subtopic_count: 10
     target_word_range: "450–850 Wörter"
     max_subtopic_bullets: 6
@@ -147,8 +147,8 @@ depth_profiles:
     prefer_deep_model: true
     inter_step_pause_seconds: 0.8
   exhaustive:
-    label: "🏛️ Marathon Deep-Dive (> 1 Std. möglich)"
-    estimated_duration_label: "ca. 35–90+ Min."
+    label: "🏛️ Exhaustive"
+    estimated_duration_label: "30–90 Min."
     subtopic_count: 15
     target_word_range: "850–1.400 Wörter"
     max_subtopic_bullets: 7

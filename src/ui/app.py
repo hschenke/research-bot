@@ -8,7 +8,11 @@ from src.__version__ import __version__
 from src.config.settings import AppSettings, load_app_settings
 from src.storage.base_repository import ResearchRepository
 from src.storage.factory import create_repository
-from src.ui.auth_view import determine_session_role, render_login_gate_or_sidebar
+from src.ui.auth_view import (
+    check_login_gate,
+    determine_session_role,
+    render_sidebar_auth_controls,
+)
 from src.ui.styles import inject_static_styles
 from src.ui.views.active_jobs_view import render_active_jobs_view
 from src.ui.views.domain_config_view import render_domain_config_view
@@ -19,7 +23,7 @@ from src.ui.views.settings_view import render_settings_view
 MAIN_NAV_TAB_KEY: str = "main_navigation_tab"
 NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "rules", "settings")
 NAV_TAB_TITLES: tuple[str, ...] = (
-    "🚀 Neue Recherche",
+    "🚀 Neu",
     "⏳ Jobs",
     "📚 Reports",
     "🎛️ Prompts & Rules",
@@ -38,7 +42,7 @@ def _get_cached_repository(turso_url: str, sqlite_path: str) -> ResearchReposito
 
 
 def _sync_navigation_tab_state() -> str:
-    """Synchronisiert und steuert den aktiven Navigations-Tab (programmatisch oder via URL)."""
+    """Synchronisiert den aktiven Tab vor dem Rendern von `st.tabs` ohne Widget-Reset."""
     forced_tab = st.session_state.pop("_force_nav_tab", None)
     if forced_tab in NAV_KEY_TO_TITLE:
         target_title = NAV_KEY_TO_TITLE[forced_tab]
@@ -58,8 +62,8 @@ def _sync_navigation_tab_state() -> str:
     if MAIN_NAV_TAB_KEY not in st.session_state:
         initial_title = NAV_KEY_TO_TITLE.get(requested_tab, NAV_TAB_TITLES[0])
         st.session_state[MAIN_NAV_TAB_KEY] = initial_title
-        if requested_tab in NAV_KEY_TO_TITLE:
-            st.session_state["_last_seen_qp_tab"] = requested_tab
+        initial_key = TITLE_TO_NAV_KEY[initial_title]
+        st.session_state["_last_seen_qp_tab"] = initial_key
         return initial_title
 
     current = st.session_state.get(MAIN_NAV_TAB_KEY)
@@ -67,12 +71,20 @@ def _sync_navigation_tab_state() -> str:
         current = NAV_TAB_TITLES[0]
         st.session_state[MAIN_NAV_TAB_KEY] = current
 
-    active_key = TITLE_TO_NAV_KEY.get(str(current))
-    if active_key and st.query_params.get("tab") != active_key:
+    active_key = TITLE_TO_NAV_KEY[str(current)]
+    if st.query_params.get("tab") != active_key:
         st.query_params["tab"] = active_key
         st.session_state["_last_seen_qp_tab"] = active_key
 
     return str(current)
+
+
+def _on_top_tab_change() -> None:
+    """Hält URL-Query-Parameter bei Klick auf einen oberen Tab synchron."""
+    current = st.session_state.get(MAIN_NAV_TAB_KEY, NAV_TAB_TITLES[0])
+    active_key = TITLE_TO_NAV_KEY.get(str(current), "new")
+    st.query_params["tab"] = active_key
+    st.session_state["_last_seen_qp_tab"] = active_key
 
 
 def _on_sidebar_nav_click(nav_key: str) -> None:
@@ -84,14 +96,8 @@ def _on_sidebar_nav_click(nav_key: str) -> None:
         st.session_state["_last_seen_qp_tab"] = nav_key
 
 
-def _render_sidebar_navigation(
-    active_tab_title: str,
-    settings: AppSettings,
-    repository: ResearchRepository,
-) -> None:
-    """Rendert die linke Seitenleiste mit Name, Version, Tab-Navigation und Systeminfo."""
-    st.sidebar.markdown(f"### 🔬 Research-Bot `v{__version__}`")
-    st.sidebar.caption("Navigation")
+def _render_sidebar_navigation(active_tab_title: str) -> None:
+    """Rendert ausschließlich die Tab-Navigation in der linken Seitenleiste."""
     for nav_key, nav_title in NAV_KEY_TO_TITLE.items():
         is_active = nav_title == active_tab_title
         st.sidebar.button(
@@ -102,8 +108,6 @@ def _render_sidebar_navigation(
             on_click=_on_sidebar_nav_click,
             args=(nav_key,),
         )
-    st.sidebar.divider()
-    st.sidebar.caption(f"🗄️ `{repository.backend_name}`")
 
 
 def run_streamlit_app() -> None:
@@ -116,65 +120,70 @@ def run_streamlit_app() -> None:
     )
     inject_static_styles()
 
+    st.sidebar.markdown(f"### 🔬 Research-Bot `v{__version__}`")
+
     settings: AppSettings = load_app_settings()
-    repository = _get_cached_repository(settings.turso_url, settings.sqlite_path)
-    repository.cleanup_stuck_cancellations()
-    domain_config = repository.get_domain_config()
-
-    default_tab_title = _sync_navigation_tab_state()
-    _render_sidebar_navigation(default_tab_title, settings, repository)
-
     role = determine_session_role(settings)
-    if not render_login_gate_or_sidebar(settings, role):
+    if not check_login_gate(settings, role):
         return
 
+    repository = _get_cached_repository(settings.turso_url, settings.sqlite_path)
+    if not st.session_state.get("_stuck_cancellations_cleaned"):
+        repository.cleanup_stuck_cancellations()
+        st.session_state["_stuck_cancellations_cleaned"] = True
+    domain_config = repository.get_domain_config()
+
+    active_tab_title = _sync_navigation_tab_state()
+    _render_sidebar_navigation(active_tab_title)
+    render_sidebar_auth_controls(settings, role)
+
     st.markdown(
-        f'<div class="rb-header">'
-        f'<div class="rb-brand"><span>🔬</span><span>Research-Bot</span></div>'
-        f'<span class="rb-badge">v{__version__}</span>'
-        f'</div>',
+        '<div class="rb-header"><div class="rb-brand"><span>🔬</span><span>Research-Bot</span></div></div>',
         unsafe_allow_html=True,
     )
 
     tab_new, tab_jobs, tab_reports, tab_rules, tab_settings = st.tabs(
         list(NAV_TAB_TITLES),
-        default=default_tab_title,
         key=MAIN_NAV_TAB_KEY,
-        on_change="rerun",
+        on_change=_on_top_tab_change,
     )
 
-    with tab_new:
-        render_new_research_view(
-            settings=settings,
-            repository=repository,
-            role=role,
-            domain_config=domain_config,
-        )
-    with tab_jobs:
-        render_active_jobs_view(
-            settings=settings,
-            repository=repository,
-            role=role,
-            domain_config=domain_config,
-        )
-    with tab_reports:
-        render_reports_view(
-            settings=settings,
-            repository=repository,
-            role=role,
-            domain_config=domain_config,
-        )
-    with tab_rules:
-        render_domain_config_view(
-            repository=repository,
-            role=role,
-            domain_config=domain_config,
-        )
-    with tab_settings:
-        render_settings_view(
-            settings=settings,
-            repository=repository,
-            role=role,
-            domain_config=domain_config,
-        )
-
+    if tab_new.open:
+        with tab_new:
+            render_new_research_view(
+                settings=settings,
+                repository=repository,
+                role=role,
+                domain_config=domain_config,
+            )
+    if tab_jobs.open:
+        with tab_jobs:
+            render_active_jobs_view(
+                settings=settings,
+                repository=repository,
+                role=role,
+                domain_config=domain_config,
+            )
+    if tab_reports.open:
+        with tab_reports:
+            render_reports_view(
+                settings=settings,
+                repository=repository,
+                role=role,
+                domain_config=domain_config,
+            )
+    if tab_rules.open:
+        with tab_rules:
+            render_domain_config_view(
+                repository=repository,
+                role=role,
+                domain_config=domain_config,
+            )
+    if tab_settings.open:
+        with tab_settings:
+            render_settings_view(
+                settings=settings,
+                repository=repository,
+                role=role,
+                domain_config=domain_config,
+            )

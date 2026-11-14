@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import html
-
 import streamlit as st
 
 from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
-from src.domain.domain_config import DomainConfig, ModelRoutingConfig
+from src.domain.domain_config import DomainConfig
 from src.domain.enums import AuthRole, ResearchDepth
 from src.domain.exceptions import DispatchError, InputValidationError, ResearchBotError
 from src.research.gemini_client import fetch_available_gemini_models
@@ -18,34 +16,6 @@ from src.ui.views.model_routing_dialog import render_model_routing_dialog
 from src.worker.dispatcher import JobDispatcher
 
 __all__ = ["fetch_available_gemini_models", "render_new_research_view"]
-
-
-def _render_routing_pill_bar(routing: ModelRoutingConfig) -> None:
-    """Rendert eine kompakte Pill-Statusleiste für das aktive Modell- und Tool-Routing."""
-    active_tools: list[str] = []
-    if routing.enable_google_search:
-        active_tools.append("🟢 Google")
-    if routing.enable_duckduckgo_search:
-        active_tools.append("🦆 DDG")
-    if routing.enable_reddit_search:
-        active_tools.append("💬 Reddit")
-    if routing.enable_hackernews_search:
-        active_tools.append("🔶 HN")
-    if routing.enable_wikipedia_search:
-        active_tools.append("📚 Wiki")
-    if routing.enable_arxiv_search:
-        active_tools.append("🔬 arXiv")
-    tools_str = html.escape(" · ".join(active_tools) if active_tools else "LLM only")
-    model_str = html.escape(routing.research_primary_model)
-
-    st.markdown(
-        f'<div class="rb-pill-bar">'
-        f'<span class="rb-pill">🤖 <code>{model_str}</code></span>'
-        f'<span class="rb-pill">{tools_str}</span>'
-        f'<span class="rb-pill">⚡ {int(routing.max_rpm)} RPM</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
 
 
 def render_new_research_view(
@@ -84,12 +54,8 @@ def render_new_research_view(
     default_fmt_idx = format_keys.index(cfg.default_report_format) if cfg.default_report_format in format_keys else 0
     routing = cfg.model_routing
 
-    col_info, col_btn = st.columns([3.5, 1.0], vertical_alignment="center")
-    with col_info:
-        _render_routing_pill_bar(routing)
-    with col_btn:
-        if st.button("🎛️ Routing & Tools", width="stretch", help="Models, Search Tools & Rate Limits"):
-            render_model_routing_dialog(repository, cfg, role)
+    if st.button("🎛️ Routing & Tools", help="Models, Search Tools & Rate Limits"):
+        render_model_routing_dialog(repository, cfg, role)
 
     with st.form("create_research_job_form", clear_on_submit=False):
         topic = st.text_input(

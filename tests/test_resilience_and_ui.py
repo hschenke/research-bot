@@ -221,6 +221,8 @@ def test_stop_and_resume_buttons_stay_on_active_jobs_tab(tmp_path: Path) -> None
         mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
 
         at = AppTest.from_function(_entry).run()
+        at.button(key="sidebar_nav_jobs").click().run()
+        assert at.session_state["main_navigation_tab"] == "⏳ Jobs"
 
         # Klick auf "⏹️ Stop" (Auftrag wird abgebrochen)
         at.button(key=f"cancel_{job.id}").click().run()
@@ -339,7 +341,7 @@ def test_job_submission_switches_to_active_jobs_tab_and_shows_flash(tmp_path: Pa
 
         at = AppTest.from_function(_entry).run()
         assert not at.exception
-        assert at.session_state["main_navigation_tab"] == "🚀 Neue Recherche"
+        assert at.session_state["main_navigation_tab"] == "🚀 Neu"
 
         # Formular ausfüllen und absenden
         topic_input = [inp for inp in at.text_input if "Recherche-Thema" in inp.label][0]
@@ -440,7 +442,8 @@ def test_completed_job_report_button_switches_to_reports_tab(tmp_path: Path) -> 
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        # Klick auf "📄 Report" beim fertigen Job in der Liste
+        # Auf Jobs-Tab wechseln und dort auf "📄 Report" beim fertigen Job klicken
+        at.button(key="sidebar_nav_jobs").click().run()
         rep_btn = at.button(key=f"view_rep_{job.id}")
         assert rep_btn is not None
         rep_btn.click().run()
@@ -461,5 +464,71 @@ def test_completed_job_report_button_switches_to_reports_tab(tmp_path: Path) -> 
         assert at.query_params.get("tab") == "settings"
 
     repo.close()
+
+
+def test_cleaned_ui_hides_sidebar_nav_before_login_and_removes_redundancies(tmp_path: Path) -> None:
+    db_file = tmp_path / "ui_clean_auth_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="super-secret-password",
+    )
+    repo = SqlResearchRepository(SqliteExecutor(str(db_file)))
+    repo.initialize_schema()
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+
+        # 1. Vor Anmeldung: Nav-Buttons dürfen NICHT sichtbar sein
+        at = AppTest.from_function(_entry).run()
+        assert not at.exception
+        nav_keys = ("new", "jobs", "reports", "rules", "settings")
+        sidebar_btn_keys = [getattr(b, "key", None) for b in at.sidebar.button]
+        for nav_key in nav_keys:
+            assert f"sidebar_nav_{nav_key}" not in sidebar_btn_keys
+
+        # Nach Passwort-Login werden Nav-Buttons sichtbar, ohne redundante Textzeilen
+        pw_inputs = [inp for inp in at.text_input if inp.label == "Passwort"]
+        assert len(pw_inputs) == 1
+        pw_inputs[0].set_value("super-secret-password")
+        login_btns = [btn for btn in at.button if btn.label == "Login"]
+        assert len(login_btns) == 1
+        login_btns[0].click().run()
+        assert not at.exception
+
+        sidebar_btn_keys_after = [getattr(b, "key", None) for b in at.sidebar.button]
+        for nav_key in nav_keys:
+            assert f"sidebar_nav_{nav_key}" in sidebar_btn_keys_after
+        assert "sidebar_logout_btn" in sidebar_btn_keys_after
+
+        # Keine redundanten Zeilen in Sidebar (Navigation, Turso/SQLite, Admin Status)
+        sidebar_texts = " ".join(
+            [m.value for m in at.sidebar.markdown]
+            + [c.value for c in at.sidebar.caption]
+            + [s.value for s in at.sidebar.success]
+        )
+        assert "Navigation" not in sidebar_texts
+        assert "Turso" not in sidebar_texts
+        assert "SQLite" not in sidebar_texts
+        assert "Admin · Session aktiv" not in sidebar_texts
+        assert "Local Mode" not in sidebar_texts
+
+        # Hauptbereich hat keine doppelte Versionsnummer und keine Routing-Pills über "Routing & Tools"
+        from src.__version__ import __version__
+
+        non_style_markdown = " ".join(m.value for m in at.main.markdown if "<style>" not in m.value)
+        assert f"v{__version__}" not in non_style_markdown
+        assert "rb-badge" not in " ".join(m.value for m in at.main.markdown)
+        assert "rb-pill" not in non_style_markdown
+        assert any(f"v{__version__}" in m.value for m in at.sidebar.markdown)
+
+    repo.close()
+
 
 

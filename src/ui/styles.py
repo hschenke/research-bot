@@ -46,22 +46,8 @@ _STATIC_APP_CSS = """
       letter-spacing: -0.02em;
       line-height: 1.25;
   }
-  .rb-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.18rem 0.55rem;
-      border-radius: 999px;
-      background: rgba(37, 99, 235, 0.1);
-      color: #2563eb;
-      border: 1px solid rgba(37, 99, 235, 0.22);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-  }
 
-  /* Pill-Statusleiste (Routing & Report-Meta) */
+  /* Pill-Statusleiste (Report-Meta) */
   .rb-pill-bar {
       display: flex;
       flex-wrap: wrap;
@@ -186,11 +172,14 @@ _STATIC_APP_CSS = """
           padding: 0.14rem 0.42rem;
       }
       div[data-baseweb="tab-list"] {
-          gap: 0.08rem;
+          gap: 0.35rem !important;
       }
       button[data-baseweb="tab"] {
-          font-size: 0.76rem;
-          padding: 0.32rem 0.42rem 0.42rem 0.42rem;
+          font-size: 0.76rem !important;
+          padding: 0.34rem 0.24rem 0.42rem 0.24rem !important;
+      }
+      button[data-baseweb="tab"] p {
+          font-size: 0.76rem !important;
       }
       .block-container h1 {
           font-size: 1.22rem !important;

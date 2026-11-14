@@ -283,9 +283,11 @@ def test_web_app_renders_and_saves_editable_domain_logic(tmp_path: Path) -> None
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        # Prüfe, dass Tab "🎛️ Prompts & Rules" samt YAML-Editor gerendert wurde
+        # Prüfe, dass Tab "🎛️ Prompts & Rules" vorhanden ist und wechsle dorthin
         tab_labels = [t.label for t in at.tabs]
         assert "🎛️ Prompts & Rules" in tab_labels
+        at.button(key="sidebar_nav_rules").click().run()
+        assert not at.exception
 
         # Ändere die Quellen-Überschrift direkt über das Formular in der Web-App und speichere
         src_inputs = [inp for inp in at.text_input if inp.label == "Quellen-Überschrift (DE)"]

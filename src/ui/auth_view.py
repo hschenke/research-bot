@@ -115,27 +115,19 @@ def determine_session_role(settings: AppSettings) -> AuthRole:
     return AuthRole.GUEST
 
 
-def render_login_gate_or_sidebar(settings: AppSettings, current_role: AuthRole) -> bool:
-    """Rendert die Anmeldemaske bzw. den Sidebar-Status inklusive Cookie-Synchronisation."""
+def check_login_gate(settings: AppSettings, current_role: AuthRole) -> bool:
+    """Prüft Auth-Gate und synchronisiert das Session-Cookie; rendert ggf. Login-Maske."""
     if not settings.app_password:
-        st.sidebar.caption("🔓 Local Mode")
         return True
 
     if current_role == AuthRole.ADMIN:
-        token_to_persist = st.session_state.get("_pending_cookie_token") or st.query_params.get("auth")
-        if token_to_persist:
+        token_to_persist = st.session_state.pop("_pending_cookie_token", None) or st.query_params.get("auth")
+        if token_to_persist and st.session_state.get("_persisted_cookie_token") != token_to_persist:
             _inject_auth_cookie_js(token_to_persist)
-
-        st.sidebar.success("🔐 **Admin** · Session aktiv")
-        if st.sidebar.button("Logout", width="stretch"):
-            _perform_logout()
-            st.rerun()
+            st.session_state["_persisted_cookie_token"] = token_to_persist
         return True
 
     if current_role == AuthRole.READONLY:
-        st.sidebar.info("👁️ **Read-Only**")
-        with st.sidebar.expander("🔑 Admin-Login"):
-            _render_password_form(settings, form_key="sidebar_admin_login")
         return True
 
     if not st.session_state.get("explicit_logout"):
@@ -145,6 +137,32 @@ def render_login_gate_or_sidebar(settings: AppSettings, current_role: AuthRole) 
     st.caption("Passwort eingeben (30 Tage Session-Cookie).")
     _render_password_form(settings, form_key="gate_admin_login")
     return False
+
+
+def render_sidebar_auth_controls(settings: AppSettings, current_role: AuthRole) -> None:
+    """Rendert ausschließlich Logout bzw. Admin-Login in der Seitenleiste (ohne Redundanzen)."""
+    if not settings.app_password:
+        return
+
+    if current_role == AuthRole.ADMIN:
+        st.sidebar.divider()
+        if st.sidebar.button("🚪 Logout", width="stretch", key="sidebar_logout_btn"):
+            _perform_logout()
+            st.rerun()
+        return
+
+    if current_role == AuthRole.READONLY:
+        st.sidebar.divider()
+        with st.sidebar.expander("🔑 Admin-Login"):
+            _render_password_form(settings, form_key="sidebar_admin_login")
+
+
+def render_login_gate_or_sidebar(settings: AppSettings, current_role: AuthRole) -> bool:
+    """Abwärtskompatible Hilfsfunktion für Auth-Gate + Sidebar-Controls."""
+    if not check_login_gate(settings, current_role):
+        return False
+    render_sidebar_auth_controls(settings, current_role)
+    return True
 
 
 def _render_password_form(settings: AppSettings, form_key: str) -> None:
@@ -179,5 +197,7 @@ def _perform_logout() -> None:
     st.session_state["auth_role"] = AuthRole.GUEST
     st.session_state["explicit_logout"] = True
     st.session_state.pop("_pending_cookie_token", None)
+    st.session_state.pop("_persisted_cookie_token", None)
     if "auth" in st.query_params:
         del st.query_params["auth"]
+

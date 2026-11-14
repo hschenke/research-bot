@@ -52,16 +52,16 @@ class ReportFormatPreset(BaseModel):
 class DepthProfileConfig(BaseModel):
     """Editierbares Profil einer Recherche-Tiefe."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     label: str = Field(min_length=2, max_length=120)
-    estimated_duration_label: str = Field(min_length=2, max_length=80)
     subtopic_count: int = Field(ge=1, le=25)
     target_word_range: str = Field(min_length=2, max_length=80)
-    max_subtopic_bullets: int = Field(default=5, ge=1, le=15)
+    max_subtopic_bullets: int = Field(default=6, ge=1, le=15)
     max_urls_per_subtopic: int = Field(ge=0, le=10)
     followup_rounds: int = Field(ge=0, le=4)
     parallel_subtopics: int = Field(default=2, ge=1, le=6)
+    single_pass: bool = False
     use_deep_research_agent: bool = False
     deep_agent_name: str = Field(default="", max_length=120)
     prefer_deep_model: bool = False
@@ -72,13 +72,13 @@ class DepthProfileConfig(BaseModel):
         return DepthProfile(
             depth=depth,
             label=self.label,
-            estimated_duration_label=self.estimated_duration_label,
             subtopic_count=self.subtopic_count,
             max_urls_per_subtopic=self.max_urls_per_subtopic,
             followup_rounds=self.followup_rounds,
             use_deep_research_agent=self.use_deep_research_agent,
             deep_agent_name=self.deep_agent_name,
             inter_step_pause_seconds=self.inter_step_pause_seconds,
+            single_pass=self.single_pass,
             target_word_range=self.target_word_range,
             max_subtopic_bullets=self.max_subtopic_bullets,
             parallel_subtopics=self.parallel_subtopics,
@@ -136,7 +136,7 @@ class ModelRoutingConfig(BaseModel):
     synthesizer_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
     max_rpm: int = Field(default=12, ge=1, le=60)
     min_call_interval_seconds: float = Field(default=4.5, ge=0.0, le=30.0)
-    single_pass_research: bool = True
+    single_pass_research: bool = False
     enable_google_search: bool = True
     enable_duckduckgo_search: bool = True
     enable_reddit_search: bool = True

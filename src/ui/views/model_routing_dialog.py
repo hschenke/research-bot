@@ -108,11 +108,11 @@ def render_model_routing_dialog(
         with p_c1:
             new_rpm = st.number_input("Max RPM", 1, 60, routing.max_rpm, disabled=not is_admin, key="p_rpm")
             new_single = st.checkbox(
-                "⚡ Single-Pass Mode",
+                "⚡ Global Single-Pass Override",
                 routing.single_pass_research,
                 disabled=not is_admin,
                 key="p_sp",
-                help="1 Call pro Subtopic (-75% API Calls)",
+                help="Erzwingt 1 Call pro Subtopic über ALLE Tiefen (inkl. Standard & Deep); deaktivieren für echtes Multi-Pass",
             )
         with p_c2:
             new_pace = st.number_input("Min. Interval (s)", 0.5, 30.0, float(routing.min_call_interval_seconds), 0.5, disabled=not is_admin, key="p_pace")

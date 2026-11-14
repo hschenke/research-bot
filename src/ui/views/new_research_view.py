@@ -83,9 +83,7 @@ def render_new_research_view(
                 "⚡ Depth",
                 options=depth_options,
                 index=default_depth_idx,
-                format_func=lambda d: (
-                    f"{cfg.get_depth_profile(d).label} ({cfg.get_depth_profile(d).estimated_duration_label})"
-                ),
+                format_func=lambda d: cfg.get_depth_profile(d).label,
             )
         with col_lang:
             selected_lang = st.selectbox(

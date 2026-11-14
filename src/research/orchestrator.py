@@ -211,6 +211,7 @@ class ResearchOrchestrator:
                     language=job.language,
                     available_models=domain_config.available_models,
                     enable_google_search=enable_search,
+                    model_routing=routing,
                 )
             except TypeError:
                 return self._llm.with_preferred_model(job_model)

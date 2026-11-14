@@ -17,7 +17,6 @@ CANDIDATE_FAST_MODELS: tuple[str, ...] = FALLBACK_AVAILABLE_MODELS
 CANDIDATE_DEEP_MODELS: tuple[str, ...] = FALLBACK_AVAILABLE_MODELS
 
 DEEP_RESEARCH_AGENT_FAST: str = _DEFAULT_DOMAIN.depth_profiles[ResearchDepth.DEEP].deep_agent_name
-DEEP_RESEARCH_AGENT_MAX: str = _DEFAULT_DOMAIN.depth_profiles[ResearchDepth.EXHAUSTIVE].deep_agent_name
 
 # --- KI-Aufruf-Timeouts, Retries & Workload-Limits ---
 MIN_LLM_TIMEOUT_SECONDS: float = 15.0

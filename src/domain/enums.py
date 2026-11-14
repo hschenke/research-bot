@@ -29,12 +29,11 @@ class JobPhase(StrEnum):
 
 
 class ResearchDepth(StrEnum):
-    """Konfigurierbare Recherche-Tiefe von Schnellüberblick bis >1h Marathon-Recherche."""
+    """Konfigurierbare Recherche-Tiefe nach gewünschtem Recherche-Aufwand."""
 
     QUICK = "quick"
     STANDARD = "standard"
     DEEP = "deep"
-    EXHAUSTIVE = "exhaustive"
 
 
 class WorkerMode(StrEnum):

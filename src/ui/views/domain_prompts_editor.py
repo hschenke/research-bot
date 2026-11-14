@@ -27,7 +27,7 @@ def render_prompts_tab(
     """Rendert alle System- und User-Prompts sowie Fallback-Templates editierbar."""
     st.caption(
         "Platzhalter: `{topic}`, `{focus_block}`, `{style_rules}`, "
-        "`{format_override_rules}`, `{max_subtopics}`, `{target_word_range}`."
+        "`{format_override_rules}`, `{depth_label}`, `{min_subtopics}`, `{max_subtopics}`, `{followup_guidance}`, `{target_word_range}`."
     )
     p = domain_config.prompts
 

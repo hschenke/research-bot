@@ -1,9 +1,10 @@
-"""Tab 4: Live-Editor für Prompts, Rules, Formats und Limits."""
+"""Tab 4: Live-Editor für Rules, Formate, Prompts, Depth-Profile, Limits & Recovery."""
 
 from __future__ import annotations
 
 import streamlit as st
 
+from src.config.settings import AppSettings, load_app_settings
 from src.domain.domain_config import (
     DomainConfig,
     ReportFormatPreset,
@@ -21,15 +22,18 @@ from src.ui.views.domain_prompts_editor import (
     render_prompts_tab,
     render_yaml_tab,
 )
+from src.ui.views.recovery_panel import render_stale_jobs_recovery
 
 
 def render_domain_config_view(
     repository: ResearchRepository,
     role: AuthRole,
     domain_config: DomainConfig,
+    settings: AppSettings | None = None,
 ) -> None:
-    """Zeigt alle Stilregeln, Formate, Prompts, Depth-Profile und Limits editierbar an."""
+    """Zeigt Rules, Formate, Prompts, Depth-Profile, Limits sowie Stale-Job-Recovery an."""
     is_admin = role == AuthRole.ADMIN
+    active_settings = settings or load_app_settings()
     flash = st.session_state.pop("_rules_flash_msg", None)
     if flash:
         st.success(str(flash))
@@ -76,6 +80,13 @@ def render_domain_config_view(
         render_app_and_limits_tab(domain_config, repository, is_admin)
     with sub_yaml:
         render_yaml_tab(domain_config, repository, is_admin)
+
+    render_stale_jobs_recovery(
+        settings=active_settings,
+        repository=repository,
+        role=role,
+        cfg=domain_config,
+    )
 
 
 def _render_style_and_formats_tab(

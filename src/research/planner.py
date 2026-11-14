@@ -49,6 +49,23 @@ def resolve_max_subtopics(
     return max(1, profile.subtopic_count)
 
 
+def resolve_min_subtopics(
+    job: ResearchJob,
+    profile: DepthProfile,
+    domain_config: DomainConfig,
+    max_subtopics: int,
+) -> int:
+    """Bestimmt die Mindestanzahl sinnvoller Teilthemen passend zur gewählten Recherche-Tiefe."""
+    _fmt_key, fmt_preset = domain_config.resolve_effective_format(
+        job.topic,
+        job.focus_instructions,
+        getattr(job, "report_format", "compact"),
+    )
+    if fmt_preset.max_subtopics_cap > 0 or profile.single_pass or max_subtopics <= 3:
+        return 1
+    return max(2, min(max_subtopics, round(max_subtopics * 0.75)))
+
+
 def _build_deterministic_fallback_plan(
     job: ResearchJob,
     max_subtopics: int,
@@ -97,6 +114,7 @@ def create_research_plan(
         getattr(job, "report_format", "compact"),
     )
     max_subtopics = resolve_max_subtopics(job, profile, cfg)
+    min_subtopics = resolve_min_subtopics(job, profile, cfg, max_subtopics)
     max_queries = cfg.limits.max_search_queries_per_subtopic
 
     focus_block = (
@@ -120,6 +138,8 @@ def create_research_plan(
             "focus_block": focus_block,
             "format_label": fmt_preset.label,
             "format_instructions": fmt_preset.instructions,
+            "depth_label": profile.label,
+            "min_subtopics": min_subtopics,
             "max_subtopics": max_subtopics,
             "max_search_queries": max_queries,
             "target_word_range": profile.target_word_range,

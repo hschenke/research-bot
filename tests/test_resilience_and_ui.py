@@ -454,14 +454,17 @@ def test_completed_job_report_button_switches_to_reports_tab(tmp_path: Path) -> 
         assert at.query_params.get("tab") == "reports"
         assert at.query_params.get("job_id") == str(job.id)
 
-        # Linke Sidebar-Navigation enthält alle 5 Tabs und wechselt zuverlässig den aktiven Tab
-        for nav_key in ("new", "jobs", "reports", "rules", "settings"):
+        # Linke Sidebar-Navigation enthält alle 4 Tabs (ohne aufgelösten System-Tab)
+        for nav_key in ("new", "jobs", "reports", "rules"):
             assert at.button(key=f"sidebar_nav_{nav_key}") is not None
+        assert not any(
+            getattr(b, "key", None) == "sidebar_nav_settings" for b in at.sidebar.button
+        )
 
-        at.button(key="sidebar_nav_settings").click().run()
+        at.button(key="sidebar_nav_rules").click().run()
         assert not at.exception
-        assert at.session_state["main_navigation_tab"] == "⚙️ System"
-        assert at.query_params.get("tab") == "settings"
+        assert at.session_state["main_navigation_tab"] == "🎛️ Rules"
+        assert at.query_params.get("tab") == "rules"
 
     repo.close()
 
@@ -488,9 +491,9 @@ def test_cleaned_ui_hides_sidebar_nav_before_login_and_removes_redundancies(tmp_
         # 1. Vor Anmeldung: Nav-Buttons dürfen NICHT sichtbar sein
         at = AppTest.from_function(_entry).run()
         assert not at.exception
-        nav_keys = ("new", "jobs", "reports", "rules", "settings")
+        nav_keys = ("new", "jobs", "reports", "rules")
         sidebar_btn_keys = [getattr(b, "key", None) for b in at.sidebar.button]
-        for nav_key in nav_keys:
+        for nav_key in (*nav_keys, "settings"):
             assert f"sidebar_nav_{nav_key}" not in sidebar_btn_keys
 
         # Nach Passwort-Login werden Nav-Buttons sichtbar, ohne redundante Textzeilen
@@ -505,6 +508,7 @@ def test_cleaned_ui_hides_sidebar_nav_before_login_and_removes_redundancies(tmp_
         sidebar_btn_keys_after = [getattr(b, "key", None) for b in at.sidebar.button]
         for nav_key in nav_keys:
             assert f"sidebar_nav_{nav_key}" in sidebar_btn_keys_after
+        assert "sidebar_nav_settings" not in sidebar_btn_keys_after
         assert "sidebar_logout_btn" in sidebar_btn_keys_after
 
         # Keine redundanten Zeilen in Sidebar (Navigation, Turso/SQLite, Admin Status)

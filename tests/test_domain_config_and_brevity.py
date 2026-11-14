@@ -283,11 +283,17 @@ def test_web_app_renders_and_saves_editable_domain_logic(tmp_path: Path) -> None
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        # Prüfe, dass Tab "🎛️ Prompts & Rules" vorhanden ist und wechsle dorthin
+        # Prüfe, dass Tab "🎛️ Rules" vorhanden ist (ohne "⚙️ System" oder "Prompts & Rules") und wechsle dorthin
         tab_labels = [t.label for t in at.tabs]
-        assert "🎛️ Prompts & Rules" in tab_labels
+        assert "🎛️ Rules" in tab_labels
+        assert "🎛️ Prompts & Rules" not in tab_labels
+        assert "⚙️ System" not in tab_labels
+        assert len(tab_labels) == 4
         at.button(key="sidebar_nav_rules").click().run()
         assert not at.exception
+        rules_markdown = " ".join(m.value for m in at.main.markdown)
+        assert "🛠️ Recovery" in rules_markdown
+        assert "Stale Jobs (>5m):" in rules_markdown
 
         # Ändere die Quellen-Überschrift direkt über das Formular in der Web-App und speichere
         src_inputs = [inp for inp in at.text_input if inp.label == "Quellen-Überschrift (DE)"]
@@ -378,7 +384,7 @@ def test_domain_config_all_expanders_default_collapsed(tmp_path: Path) -> None:
         at = AppTest.from_function(_entry).run()
         assert not at.exception
 
-        at.session_state["main_navigation_tab"] = "🎛️ Prompts & Rules"
+        at.session_state["main_navigation_tab"] = "🎛️ Rules"
         at.run()
         assert not at.exception
 
@@ -389,3 +395,90 @@ def test_domain_config_all_expanders_default_collapsed(tmp_path: Path) -> None:
             assert exp.proto.expanded is False
 
     repo.close()
+
+
+def test_depth_profiles_and_compact_format_labels_match_effort_spec() -> None:
+    from src.config.domain_loader import dump_domain_config_yaml
+    from src.domain.domain_config import DepthProfileConfig
+    from src.domain.models import DepthProfile
+
+    cfg = load_default_domain_config()
+    assert list(ResearchDepth) == [ResearchDepth.QUICK, ResearchDepth.STANDARD, ResearchDepth.DEEP]
+    assert cfg.report_formats["compact"].label == "⚡ Compact"
+    assert "(Standard)" not in cfg.report_formats["compact"].label
+    assert "estimated_duration_label" not in DepthProfile.__dataclass_fields__
+    assert "estimated_duration_label" not in DepthProfileConfig.model_fields
+    assert "estimated_duration_label" not in dump_domain_config_yaml(cfg)
+
+    quick = cfg.get_depth_profile(ResearchDepth.QUICK)
+    standard = cfg.get_depth_profile(ResearchDepth.STANDARD)
+    deep = cfg.get_depth_profile(ResearchDepth.DEEP)
+
+    assert quick.single_pass is True
+    assert quick.subtopic_count < standard.subtopic_count < deep.subtopic_count
+    assert standard.single_pass is False
+    assert deep.single_pass is False
+    assert quick.followup_rounds < standard.followup_rounds < deep.followup_rounds
+    assert quick.max_urls_per_subtopic < standard.max_urls_per_subtopic < deep.max_urls_per_subtopic
+    assert deep.prefer_deep_model is True
+    assert deep.use_deep_research_agent is True
+
+
+def test_ui_new_research_depths_and_rules_stale_job_recovery(tmp_path: Path) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    db_file = tmp_path / "ui_depth_recovery_test.db"
+    settings = AppSettings(
+        gemini_api_key="valid_test_key",
+        sqlite_path=str(db_file),
+        app_password="",
+    )
+    executor = SqliteExecutor(str(db_file))
+    repo = SqlResearchRepository(executor)
+    repo.initialize_schema()
+
+    stale_job = repo.create_job(ResearchRequest(topic="Verwaister Deep-Job", depth=ResearchDepth.DEEP))
+    assert repo.claim_job(stale_job.id, worker_id="dead-worker") is True
+    old_hb = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    executor.execute("UPDATE research_jobs SET heartbeat_at = ? WHERE id = ?", (old_hb, stale_job.id))
+
+    dispatched: list[tuple[str, ResearchDepth | None]] = []
+
+    def _entry() -> None:
+        from src.ui.app import run_streamlit_app as _run
+
+        _run()
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.ui.app.load_app_settings", lambda: settings)
+        mp.setattr("src.ui.views.active_jobs_view.JobDispatcher.auto_recover_stale_jobs", lambda *_a, **_kw: 0)
+        mp.setattr(
+            "src.ui.views.recovery_panel.JobDispatcher.dispatch",
+            lambda _self, job_id, depth=None: dispatched.append((job_id, depth)) or "Mock",
+        )
+
+        at = AppTest.from_function(_entry).run()
+        assert not at.exception
+
+        depth_box = [sb for sb in at.selectbox if sb.label == "⚡ Depth"][0]
+        assert list(depth_box.options) == ["⚡ Quick", "🔎 Standard", "🧠 Deep"]
+        assert all("Min" not in str(opt) and "Exhaustive" not in str(opt) for opt in depth_box.options)
+
+        fmt_box = [sb for sb in at.selectbox if sb.label == "📐 Format"][0]
+        assert "⚡ Compact" in fmt_box.options
+        assert all("(Standard)" not in str(opt) for opt in fmt_box.options)
+
+        at.button(key="sidebar_nav_rules").click().run()
+        assert not at.exception
+        rules_markdown = " ".join(m.value for m in at.main.markdown)
+        assert "🛠️ Recovery" in rules_markdown
+        assert "Stale Jobs (>5m): **1**" in rules_markdown
+
+        recover_btn = at.button(key="btn_recover_stale_jobs")
+        recover_btn.click().run()
+        assert not at.exception
+        assert dispatched == [(stale_job.id, ResearchDepth.DEEP)]
+        assert any("1 Job(s) neu gestartet." in s.value for s in at.main.success)
+
+    repo.close()
+

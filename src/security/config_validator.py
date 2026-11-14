@@ -64,7 +64,7 @@ def validate_domain_config_payload(raw_data: dict[str, Any]) -> DomainConfig:
     missing_depths = [d.value for d in ResearchDepth if d not in config.depth_profiles]
     if missing_depths:
         raise InputValidationError(
-            f"Es müssen alle 4 Recherche-Tiefen definiert sein (fehlend: {', '.join(missing_depths)})."
+            f"Es müssen alle {len(ResearchDepth)} Recherche-Tiefen definiert sein (fehlend: {', '.join(missing_depths)})."
         )
 
     for depth_cfg in config.depth_profiles.values():

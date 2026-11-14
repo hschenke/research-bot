@@ -66,6 +66,28 @@ def _diff_nested_dicts(base: dict[str, Any], custom: dict[str, Any]) -> dict[str
     return diff
 
 
+def _sanitize_legacy_overrides(overrides: dict[str, Any]) -> dict[str, Any]:
+    """Bereinigt veraltete Konfigurationsschlüssel (z. B. `exhaustive` oder Zeit-Labels) aus Overrides."""
+    cleaned = dict(overrides)
+    if str(cleaned.get("default_depth") or "").strip().lower() == "exhaustive":
+        cleaned["default_depth"] = "deep"
+
+    raw_profiles = cleaned.get("depth_profiles")
+    if isinstance(raw_profiles, dict):
+        next_profiles: dict[str, Any] = {}
+        for depth_key, profile_val in raw_profiles.items():
+            if str(depth_key).strip().lower() == "exhaustive":
+                continue
+            if isinstance(profile_val, dict):
+                prof_copy = dict(profile_val)
+                prof_copy.pop("estimated_duration_label", None)
+                next_profiles[depth_key] = prof_copy
+            else:
+                next_profiles[depth_key] = profile_val
+        cleaned["depth_profiles"] = next_profiles
+    return cleaned
+
+
 def merge_domain_config(
     default_cfg: DomainConfig,
     overrides: dict[str, Any] | None,
@@ -74,7 +96,8 @@ def merge_domain_config(
     if not overrides:
         return default_cfg
     base_dict = default_cfg.model_dump(mode="json")
-    merged_dict = deep_merge_dicts(base_dict, overrides)
+    sanitized_overrides = _sanitize_legacy_overrides(overrides)
+    merged_dict = deep_merge_dicts(base_dict, sanitized_overrides)
     try:
         return DomainConfig.model_validate(merged_dict)
     except Exception as exc:

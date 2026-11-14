@@ -1,6 +1,6 @@
 # Zentrale Fachlogik-, KI-Prompt- und Anwendungskonfiguration für Research-Bot.
 # Alle Werte in dieser Datei dienen als transparente Standardbasis und sind
-# vollständig in der Web-App unter "🎛️ KI- & Fachlogik" sichtbar und editierbar.
+# vollständig in der Web-App unter "🎛️ Rules" sichtbar und editierbar.
 
 default_language: "de"
 default_depth: "standard"
@@ -20,7 +20,7 @@ model_routing:
   synthesizer_model: "gemini-3.5-flash-lite"
   max_rpm: 12
   min_call_interval_seconds: 4.5
-  single_pass_research: true
+  single_pass_research: false
   enable_google_search: true
   enable_duckduckgo_search: true
   enable_reddit_search: true
@@ -77,7 +77,7 @@ style:
 
 report_formats:
   compact:
-    label: "⚡ Compact (Standard)"
+    label: "⚡ Compact"
     instructions: |-
       Erstelle einen straffen, hochverdichteten Kurzbericht:
       - Starte mit 3–4 knackigen Kernaussagen (Bullet-Points mit den wichtigsten Fakten/Zahlen).
@@ -97,7 +97,7 @@ report_formats:
     label: "📊 Vergleichstabelle"
     instructions: |-
       Stelle eine kompakte Markdown-Vergleichstabelle der wichtigsten Optionen/Kriterien in den Mittelpunkt, ergänzt durch maximal 4–6 knappe Entscheidungs-Stichpunkte mit Quellenlinks. Kein Fließtext-Ballast.
-    max_subtopics_cap: 3
+    max_subtopics_cap: 0
     omit_wrapper_sections: true
   detailed_dossier:
     label: "📑 Deep Dossier"
@@ -109,56 +109,43 @@ report_formats:
 depth_profiles:
   quick:
     label: "⚡ Quick"
-    estimated_duration_label: "~30s"
     subtopic_count: 3
-    target_word_range: "100–250 Wörter"
+    target_word_range: "150–300 Wörter"
     max_subtopic_bullets: 4
     max_urls_per_subtopic: 0
     followup_rounds: 0
     parallel_subtopics: 3
+    single_pass: true
     use_deep_research_agent: false
     deep_agent_name: ""
     prefer_deep_model: false
     inter_step_pause_seconds: 0.0
   standard:
     label: "🔎 Standard"
-    estimated_duration_label: "2–4 Min."
     subtopic_count: 6
-    target_word_range: "200–450 Wörter"
-    max_subtopic_bullets: 5
+    target_word_range: "350–650 Wörter"
+    max_subtopic_bullets: 6
     max_urls_per_subtopic: 2
     followup_rounds: 1
     parallel_subtopics: 2
+    single_pass: false
     use_deep_research_agent: false
     deep_agent_name: ""
     prefer_deep_model: false
-    inter_step_pause_seconds: 0.2
+    inter_step_pause_seconds: 0.5
   deep:
     label: "🧠 Deep"
-    estimated_duration_label: "10–20 Min."
     subtopic_count: 10
-    target_word_range: "450–850 Wörter"
-    max_subtopic_bullets: 6
-    max_urls_per_subtopic: 4
-    followup_rounds: 1
-    parallel_subtopics: 2
-    use_deep_research_agent: true
-    deep_agent_name: "deep-research-preview-04-2026"
-    prefer_deep_model: true
-    inter_step_pause_seconds: 0.8
-  exhaustive:
-    label: "🏛️ Exhaustive"
-    estimated_duration_label: "30–90 Min."
-    subtopic_count: 15
-    target_word_range: "850–1.400 Wörter"
-    max_subtopic_bullets: 7
+    target_word_range: "800–1.500 Wörter"
+    max_subtopic_bullets: 8
     max_urls_per_subtopic: 5
     followup_rounds: 2
     parallel_subtopics: 2
+    single_pass: false
     use_deep_research_agent: true
-    deep_agent_name: "deep-research-max-preview-04-2026"
+    deep_agent_name: "deep-research-preview-04-2026"
     prefer_deep_model: true
-    inter_step_pause_seconds: 1.2
+    inter_step_pause_seconds: 1.5
 
 prompts:
   planner_system_prompt: |-
@@ -173,8 +160,9 @@ prompts:
     Gewünschtes Berichtsformat ({format_label}):
     {format_instructions}
 
-    Plane 1 bis maximal {max_subtopics} klar abgegrenzte, überschneidungsfreie Teilthemen (`subtopics`).
-    WICHTIG: Erzeuge NUR so viele Teilthemen, wie für eine knappe, vollständige Beantwortung wirklich nötig sind (bei einfachen Fragen oder Listenwünschen 1 bis maximal 2 Teilthemen!).
+    Recherche-Aufwand / Tiefe: {depth_label}
+    Plane {min_subtopics} bis maximal {max_subtopics} klar abgegrenzte, überschneidungsfreie Teilthemen (`subtopics`), passend zur gewählten Recherche-Tiefe ({depth_label}).
+    Bei expliziten Kurzlisten-Wünschen beschränke dich auf maximal {max_subtopics} Teilthemen; nutze bei höherer Tiefe die vorgesehene Bandbreite für detaillierte Teilaspekte, Quellenvergleiche und Gegenprüfung.
     Formuliere pro Teilthema eine konkrete Leitfrage sowie bis zu {max_search_queries} präzise Suchanfragen.
   deep_baseline_prompt: |-
     Recherchiere aktuelle Kernfakten, Zahlen und Primärquellen zum Thema: {topic}
@@ -219,10 +207,12 @@ prompts:
     {scraped_pages}
 
     Verdichte die wichtigsten Erkenntnisse in maximal {max_subtopic_bullets} prägnante Stichpunkte (ggf. mit 1–2 Sätzen Einordnung) inklusive verlinkter Quellen `[Quellentitel](URL)`. Keine Redundanz, keine Floskeln.
+    {followup_guidance}
   investigator_followup_user_prompt: |-
     Gesamtthema: {topic}
+    {focus_block}
     Teilgebiet: {subtopic_title}
-    Schließe gezielt und knapp folgende offene Fragen:
+    Schließe gezielt und knapp folgende offene Fragen (Nachrecherche):
     {open_questions}
     Liefere nur belastbare Fakten und konkrete URLs in Stichpunkten.
   synthesizer_system_prompt: |-

@@ -16,15 +16,15 @@ class DepthProfile:
 
     depth: ResearchDepth
     label: str
-    estimated_duration_label: str
     subtopic_count: int
     max_urls_per_subtopic: int
     followup_rounds: int
     use_deep_research_agent: bool
     deep_agent_name: str
     inter_step_pause_seconds: float
-    target_word_range: str = "200–450 Wörter"
-    max_subtopic_bullets: int = 5
+    single_pass: bool = False
+    target_word_range: str = "350–650 Wörter"
+    max_subtopic_bullets: int = 6
     parallel_subtopics: int = 2
     prefer_deep_model: bool = False
 

@@ -24,6 +24,7 @@ from src.config.constants import (
 )
 from src.config.domain_loader import load_default_domain_config
 from src.config.settings import AppSettings
+from src.domain.domain_config import ModelRoutingConfig
 from src.domain.exceptions import JobCancelledError, LLMProviderError
 from src.domain.models import SourceCitation
 from src.research.deep_agent_runner import poll_deep_research_agent
@@ -117,6 +118,7 @@ class GeminiInteractionsGateway:
         available_models: list[str] | tuple[str, ...] | None = None,
         rate_limiter: LlmRateLimiter | None = None,
         enable_google_search: bool = True,
+        model_routing: ModelRoutingConfig | None = None,
     ) -> None:
         if not settings.has_gemini_configured:
             raise LLMProviderError(
@@ -131,9 +133,18 @@ class GeminiInteractionsGateway:
         self._quota_state = quota_state or SharedQuotaState()
         self._rate_limiter = rate_limiter or get_global_rate_limiter()
         self._enable_google_search = enable_google_search
+        self._model_routing = model_routing
+        self._custom_web_search = web_search_fn
         self._client = shared_client or create_fast_genai_client(settings.gemini_api_key)
         self._web_search_fn: WebSearchFn | None = (
-            (lambda q, lang: search_multi_source_tools(q, language=lang, settings=settings))
+            (
+                lambda q, lang: search_multi_source_tools(
+                    q,
+                    language=lang,
+                    routing=self._model_routing,
+                    settings=self._settings,
+                )
+            )
             if web_search_fn is _UNSET
             else web_search_fn
         )
@@ -155,6 +166,7 @@ class GeminiInteractionsGateway:
         language: str | None = None,
         available_models: list[str] | tuple[str, ...] | None = None,
         enable_google_search: bool | None = None,
+        model_routing: ModelRoutingConfig | None = None,
     ) -> GeminiInteractionsGateway:
         """Erzeugt eine Gateway-Sicht mit gemeinsamem Client, Quota-Gedächtnis und Live-Action-Hook."""
         return GeminiInteractionsGateway(
@@ -167,10 +179,11 @@ class GeminiInteractionsGateway:
             deadline_monotonic=self._deadline_monotonic if deadline_monotonic is _UNSET else deadline_monotonic,
             language=language or self._language,
             quota_state=self._quota_state,
-            web_search_fn=self._web_search_fn,
+            web_search_fn=self._custom_web_search,
             available_models=available_models or self._available_models,
             rate_limiter=self._rate_limiter,
             enable_google_search=self._enable_google_search if enable_google_search is None else enable_google_search,
+            model_routing=self._model_routing if model_routing is None else model_routing,
         )
 
     def with_action_callback(self, on_action: Callable[[str], None]) -> GeminiInteractionsGateway:
@@ -255,6 +268,21 @@ class GeminiInteractionsGateway:
     def get_warnings(self) -> list[str]:
         """Liefert alle während des Gateway-Laufs gesammelten Kontingent- und Tool-Warnungen."""
         return self._quota_state.get_warnings()
+
+    def search_external_sources(self, query: str) -> list[SourceCitation]:
+        """Durchsucht konfigurierte Web-, Community- & Fachquellen für ergänzende Evidenz."""
+        if self._web_search_fn is None or not query.strip():
+            return []
+        self._check_cancelled()
+        self._emit_action(f"🧭 Durchsuche Zusatzquellen zu »{query[:48]}«...")
+        try:
+            results = self._web_search_fn(query, self._language)
+            return results if isinstance(results, list) else []
+        except JobCancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("Zusatzquellen-Suche für '%s' fehlgeschlagen: %s", query, exc)
+            return []
 
     def generate_grounded(
         self,

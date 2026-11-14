@@ -15,7 +15,7 @@ Auf kostenlosen Web-Plattformen wie *Streamlit Community Cloud* werden inaktive 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │  1. Streamlit Web-App (Desktop / Smartphone)                         │
-│     • Thema, Schwerpunkte & Tiefe wählen (2 Min. bis > 120 Min.)     │
+│     • Thema, Schwerpunkte & Tiefe wählen (Quick, Standard oder Deep)  │
 │     • Speichert Auftrag in Turso (`queued`)                          │
 │     • Triggert sofort GitHub Actions Worker via REST API             │
 └───────────────────────────────┬──────────────────────────────────────┘
@@ -75,7 +75,7 @@ research-bot/
 │   ├── research/                  # Gemini Interactions API, WebFetcher, Planner, Investigator, Synthesizer, Orchestrator
 │   ├── worker/                    # GitHubActionsDispatcher, LocalBackgroundRunner & CLI-Worker
 │   ├── notifications/             # Responsiver HTML-Mail-Renderer & Resend/SMTP-Versand
-│   └── ui/                        # Schlanke Streamlit-Views inkl. Live-Editor für KI- & Fachlogik (`🎛️ KI- & Fachlogik`)
+│   └── ui/                        # Schlanke Streamlit-Views inkl. Live-Editor für Rules & Recovery (`🎛️ Rules`)
 ├── tests/                         # Umfassende Unit- & Integrationstests
 ├── streamlit_app.py               # Root-Entrypoint für Streamlit Cloud
 ├── requirements.txt               # Vollständige Abhängigkeiten (UI + Worker)

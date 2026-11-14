@@ -30,6 +30,18 @@ def _safe_json_loads(raw_json: str | None, fallback: Any) -> Any:
         return fallback
 
 
+def _parse_research_depth(raw_depth: Any) -> ResearchDepth:
+    """Konvertiert gespeicherte DB-Tiefen robust inkl. Abwärtskompatibilität für `exhaustive`."""
+    normalized = str(raw_depth or "standard").strip().lower()
+    if normalized == "exhaustive":
+        return ResearchDepth.DEEP
+    try:
+        return ResearchDepth(normalized)
+    except ValueError:
+        logger.warning("Unbekannte Recherche-Tiefe '%s' in DB – verwende 'standard'.", raw_depth)
+        return ResearchDepth.STANDARD
+
+
 def map_row_to_job(row: dict[str, Any]) -> ResearchJob:
     """Konvertiert eine Datenbankzeile aus `research_jobs` in ein `ResearchJob`-Modell."""
     raw_logs = _safe_json_loads(row.get("progress_log_json"), [])
@@ -43,7 +55,7 @@ def map_row_to_job(row: dict[str, Any]) -> ResearchJob:
         id=str(row["id"]),
         topic=str(row["topic"]),
         focus_instructions=str(row.get("focus_instructions") or ""),
-        depth=ResearchDepth(str(row.get("depth") or "standard")),
+        depth=_parse_research_depth(row.get("depth")),
         report_format=str(row.get("report_format") or "compact"),
         language=str(row.get("language") or "de"),
         notify_email=str(row.get("notify_email") or ""),
@@ -80,7 +92,7 @@ def map_row_to_report(row: dict[str, Any]) -> ResearchReport:
         job_id=str(row["job_id"]),
         title=str(row["title"]),
         topic=str(row["topic"]),
-        depth=ResearchDepth(str(row.get("depth") or "standard")),
+        depth=_parse_research_depth(row.get("depth")),
         language=str(row.get("language") or "de"),
         executive_summary=str(row.get("executive_summary") or ""),
         key_takeaways=takeaways,

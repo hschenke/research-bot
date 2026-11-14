@@ -18,16 +18,14 @@ from src.ui.views.active_jobs_view import render_active_jobs_view
 from src.ui.views.domain_config_view import render_domain_config_view
 from src.ui.views.new_research_view import render_new_research_view
 from src.ui.views.reports_view import render_reports_view
-from src.ui.views.settings_view import render_settings_view
 
 MAIN_NAV_TAB_KEY: str = "main_navigation_tab"
-NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "rules", "settings")
+NAV_TAB_KEYS: tuple[str, ...] = ("new", "jobs", "reports", "rules")
 NAV_TAB_TITLES: tuple[str, ...] = (
     "🚀 Neu",
     "⏳ Jobs",
     "📚 Reports",
-    "🎛️ Prompts & Rules",
-    "⚙️ System",
+    "🎛️ Rules",
 )
 NAV_KEY_TO_TITLE: dict[str, str] = dict(zip(NAV_TAB_KEYS, NAV_TAB_TITLES, strict=True))
 TITLE_TO_NAV_KEY: dict[str, str] = {v: k for k, v in NAV_KEY_TO_TITLE.items()}
@@ -142,7 +140,7 @@ def run_streamlit_app() -> None:
         unsafe_allow_html=True,
     )
 
-    tab_new, tab_jobs, tab_reports, tab_rules, tab_settings = st.tabs(
+    tab_new, tab_jobs, tab_reports, tab_rules = st.tabs(
         list(NAV_TAB_TITLES),
         key=MAIN_NAV_TAB_KEY,
         on_change=_on_top_tab_change,
@@ -178,12 +176,5 @@ def run_streamlit_app() -> None:
                 repository=repository,
                 role=role,
                 domain_config=domain_config,
-            )
-    if tab_settings.open:
-        with tab_settings:
-            render_settings_view(
                 settings=settings,
-                repository=repository,
-                role=role,
-                domain_config=domain_config,
             )

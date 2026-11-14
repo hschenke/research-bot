@@ -181,6 +181,57 @@ class TestSqlResearchRepository:
         assert repo.get_job(j_failed.id) is None
         repo.close()
 
+    def test_legacy_exhaustive_rows_and_overrides_migrate_gracefully(self) -> None:
+        import json
+
+        executor = SqliteExecutor(":memory:")
+        repo = SqlResearchRepository(executor)
+        repo.initialize_schema()
+
+        job = repo.create_job(ResearchRequest(topic="Legacy Marathon-Auftrag", depth=ResearchDepth.DEEP))
+        executor.execute("UPDATE research_jobs SET depth = 'exhaustive' WHERE id = ?", (job.id,))
+        loaded_job = repo.get_job(job.id)
+        assert loaded_job is not None
+        assert loaded_job.depth == ResearchDepth.DEEP
+
+        report = ResearchReport(
+            job_id=job.id,
+            title="Legacy Deep Report",
+            topic=job.topic,
+            depth=ResearchDepth.DEEP,
+            language="de",
+            executive_summary="Kurzfassung.",
+            key_takeaways=["Punkt 1"],
+            content_markdown="# Legacy Deep Report\n\nText.",
+            citations=[],
+            model_used="gemini-3.5-flash-lite",
+            duration_seconds=600,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        repo.mark_job_completed(job.id, report)
+        executor.execute("UPDATE research_reports SET depth = 'exhaustive' WHERE job_id = ?", (job.id,))
+        reports = repo.list_reports(limit=5)
+        assert len(reports) == 1
+        assert reports[0].depth == ResearchDepth.DEEP
+
+        legacy_overrides = {
+            "default_depth": "exhaustive",
+            "depth_profiles": {
+                "exhaustive": {"label": "Extrem", "estimated_duration_label": "> 60 Min."},
+                "deep": {"label": "Custom Deep", "estimated_duration_label": "20-45 Min."},
+            },
+            "style": {"sources_heading_de": "## Historische Quellen"},
+        }
+        executor.execute(
+            "INSERT INTO app_domain_config (config_key, config_json, updated_at) VALUES (?, ?, ?)",
+            ("active_domain_overrides", json.dumps(legacy_overrides), datetime.now(UTC).isoformat()),
+        )
+        migrated_cfg = repo.get_domain_config()
+        assert migrated_cfg.default_depth == ResearchDepth.DEEP
+        assert migrated_cfg.get_depth_profile(ResearchDepth.DEEP).label == "Custom Deep"
+        assert migrated_cfg.style.sources_heading_de == "## Historische Quellen"
+        repo.close()
+
 
 class TestTursoExecutorProtocol:
     def test_normalizes_libsql_and_https_urls(self) -> None:

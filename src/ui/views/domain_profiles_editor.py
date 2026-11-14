@@ -19,7 +19,7 @@ def render_depth_profiles_tab(
     repository: ResearchRepository,
     is_admin: bool,
 ) -> None:
-    """Rendert die 4 Depth-Profile vollständig editierbar."""
+    """Rendert die 3 Depth-Profile vollständig editierbar."""
     with st.form("form_depth_profiles", clear_on_submit=False):
         updated_depths: dict[ResearchDepth, DepthProfileConfig] = {}
         for depth in ResearchDepth:
@@ -44,12 +44,10 @@ def _render_single_depth_inputs(
     is_admin: bool,
 ) -> DepthProfileConfig:
     k = depth.value
-    r1c1, r1c2, r1c3 = st.columns(3)
+    r1c1, r1c2 = st.columns(2)
     with r1c1:
         lbl = st.text_input("Label", value=prof.label, disabled=not is_admin, key=f"dcfg_dp_lbl_{k}")
     with r1c2:
-        dur = st.text_input("Dauer", value=prof.estimated_duration_label, disabled=not is_admin, key=f"dcfg_dp_dur_{k}")
-    with r1c3:
         words = st.text_input("Target Words", value=prof.target_word_range, disabled=not is_admin, key=f"dcfg_dp_w_{k}")
 
     r2c1, r2c2, r2c3, r2c4, r2c5 = st.columns(5)
@@ -64,25 +62,27 @@ def _render_single_depth_inputs(
     with r2c5:
         par = st.number_input("Parallel Workers", 1, 6, prof.parallel_subtopics, disabled=not is_admin, key=f"dcfg_dp_p_{k}")
 
-    r3c1, r3c2, r3c3, r3c4 = st.columns([1.2, 1.6, 1.2, 1.0])
+    r3c1, r3c2, r3c3, r3c4, r3c5 = st.columns([1.1, 1.0, 1.5, 1.2, 1.0])
     with r3c1:
-        use_ag = st.checkbox("Deep Agent", value=prof.use_deep_research_agent, disabled=not is_admin, key=f"dcfg_dp_ag_{k}")
+        single_p = st.checkbox("⚡ Single-Pass", value=prof.single_pass, disabled=not is_admin, key=f"dcfg_dp_sp_{k}")
     with r3c2:
-        ag_name = st.text_input("Agent Model", value=prof.deep_agent_name, disabled=not is_admin, key=f"dcfg_dp_agn_{k}")
+        use_ag = st.checkbox("Deep Agent", value=prof.use_deep_research_agent, disabled=not is_admin, key=f"dcfg_dp_ag_{k}")
     with r3c3:
-        pref_deep = st.checkbox("Prefer Deep Model", value=prof.prefer_deep_model, disabled=not is_admin, key=f"dcfg_dp_pd_{k}")
+        ag_name = st.text_input("Agent Model", value=prof.deep_agent_name, disabled=not is_admin, key=f"dcfg_dp_agn_{k}")
     with r3c4:
+        pref_deep = st.checkbox("Prefer Deep Model", value=prof.prefer_deep_model, disabled=not is_admin, key=f"dcfg_dp_pd_{k}")
+    with r3c5:
         pause = st.number_input("Pause (s)", 0.0, 10.0, float(prof.inter_step_pause_seconds), step=0.1, disabled=not is_admin, key=f"dcfg_dp_ps_{k}")
 
     return DepthProfileConfig(
         label=lbl,
-        estimated_duration_label=dur,
         subtopic_count=int(sub_cnt),
         target_word_range=words,
         max_subtopic_bullets=int(bullets),
         max_urls_per_subtopic=int(urls),
         followup_rounds=int(fup),
         parallel_subtopics=int(par),
+        single_pass=single_p,
         use_deep_research_agent=use_ag,
         deep_agent_name=ag_name,
         prefer_deep_model=pref_deep,
